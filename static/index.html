@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LUNARA • Cislunar Economy Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
+        
+        :root {
+            --space-black: #0a0b0f;
+            --deep-navy: #0f172a;
+        }
+        
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        
+        .font-space {
+            font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+        }
+
+        .space-bg {
+            background: radial-gradient(circle at 50% 20%, #1a2332 0%, #0a0b0f 70%);
+            background-attachment: fixed;
+        }
+
+        .glass {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .section-header {
+            font-size: 0.75rem;
+            letter-spacing: 0.15em;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+
+        .lunar-card {
+            transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.2s;
+        }
+        
+        .lunar-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        }
+
+        .stock-row {
+            transition: background 0.1s ease;
+        }
+        
+        .stock-row:hover {
+            background: rgba(34, 243, 255, 0.06);
+        }
+
+        .money {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .three-container {
+            border-radius: 1rem;
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, 0.15);
+        }
+
+        .nav-link {
+            transition: all 0.2s ease;
+        }
+        
+        .nav-link:hover {
+            color: #67f6ff;
+        }
+
+        .value-glow {
+            text-shadow: 0 0 20px rgba(103, 246, 255, 0.3);
+        }
+    </style>
+</head>
+<body class="space-bg text-slate-200 min-h-screen">
+    <!-- Navbar -->
+    <nav class="border-b border-white/10 bg-[#0a0b0f]/80 backdrop-blur-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-x-3">
+                    <div class="flex items-center gap-x-2">
+                        <div class="w-9 h-9 rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center">
+                            <i class="fa-solid fa-rocket text-black text-xl"></i>
+                        </div>
+                        <div>
+                            <span class="font-space text-2xl tracking-tighter font-semibold">LUNARA</span>
+                        </div>
+                    </div>
+                    <div class="hidden md:flex items-center px-3 py-1 rounded-full bg-white/5 text-xs text-white/60">
+                        Cislunar Economy Simulator
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-x-4 text-sm">
+                    <div class="hidden sm:flex items-center gap-x-2 bg-white/5 px-3 py-1.5 rounded-2xl text-xs">
+                        <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+                        <span class="text-white/70">Live Markets</span>
+                    </div>
+                    
+                    <div class="flex items-center gap-x-2">
+                        <div class="text-right">
+                            <div class="text-[10px] text-white/50">STARTING CAPITAL</div>
+                            <div class="font-mono text-lg font-semibold text-emerald-400 money">$2,500</div>
+                        </div>
+                        <div class="text-[10px] leading-tight text-white/50 max-w-[110px]">
+                            What most U.S. families can reasonably invest
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-6 pt-8">
+        
+        <!-- Hero -->
+        <div class="flex flex-col lg:flex-row items-center gap-12 pb-12">
+            <div class="flex-1">
+                <div class="inline-flex items-center gap-x-2 px-4 py-1 rounded-full bg-white/5 text-xs tracking-[2px] mb-6">
+                    <span class="text-cyan-400">EDUCATIONAL</span> 
+                    <span class="text-white/30">•</span> 
+                    <span>REAL DATA • SIMULATED FUTURE</span>
+                </div>
+                
+                <h1 class="font-space text-6xl lg:text-7xl tracking-tighter leading-none font-semibold">
+                    Own the<br>
+                    <span class="bg-gradient-to-r from-cyan-400 via-violet-400 to-fuchsia-400 bg-clip-text text-transparent">Cislunar</span><br>
+                    Future.
+                </h1>
+                
+                <p class="mt-6 text-xl text-white/70 max-w-lg">
+                    Start with what most American families can afford. 
+                    Learn the real economics of space while building your portfolio.
+                </p>
+
+                <div class="mt-8 flex items-center gap-x-4">
+                    <button onclick="document.getElementById('market').scrollIntoView({ behavior: 'smooth' })" 
+                            class="px-8 py-4 bg-white text-black font-semibold rounded-3xl flex items-center gap-x-2 hover:bg-white/90 transition-all">
+                        <span>Start Investing</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                    
+                    <button onclick="showProjections()" 
+                            class="px-6 py-4 border border-white/20 hover:bg-white/5 rounded-3xl flex items-center gap-x-2 transition-all">
+                        <span>See Projections</span>
+                    </button>
+                </div>
+                
+                <div class="mt-6 text-xs text-white/50 flex items-center gap-x-2">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>Starting capital based on Federal Reserve SCF data for median U.S. household investable assets</span>
+                </div>
+            </div>
+
+            <!-- 3D Moon Hero (compact) -->
+            <div class="flex-1 w-full max-w-[380px]">
+                <div id="hero-moon" class="three-container w-full aspect-square bg-black rounded-3xl border border-white/10"></div>
+            </div>
+        </div>
+
+        <!-- Live Market -->
+        <div id="market" class="mb-16">
+            <div class="flex items-end justify-between mb-6">
+                <div>
+                    <div class="section-header">Real Markets • Live</div>
+                    <div class="font-space text-4xl tracking-tight">Lunar Market</div>
+                    <div class="text-white/50 mt-1">Real-time aerospace &amp; space industry equities</div>
+                </div>
+                <div class="text-xs text-white/50">Updates automatically • Data: Yahoo Finance</div>
+            </div>
+
+            <div class="glass rounded-3xl p-1 border border-white/10">
+                <div class="overflow-auto max-h-[520px]">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="text-xs text-white/50 border-b border-white/10">
+                                <th class="text-left py-3 px-6 font-medium">Ticker</th>
+                                <th class="text-left py-3 px-6 font-medium">Company</th>
+                                <th class="text-right py-3 px-6 font-medium">Price</th>
+                                <th class="text-right py-3 px-6 font-medium">24h Change</th>
+                                <th class="w-24"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="stocks-table" class="text-sm divide-y divide-white/10">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="mt-3 flex justify-between items-center text-xs">
+                <div class="text-white/40">Click "Buy" to add to your simulated $2,500 portfolio</div>
+                <div>
+                    <button onclick="refreshStocks()" class="flex items-center gap-x-2 text-white/60 hover:text-white transition-colors">
+                        <i class="fa-solid fa-sync-alt text-xs"></i> 
+                        <span>Refresh now</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Crypto & Blockchain -->
+        <div id="crypto" class="mb-16">
+            <div class="flex items-end justify-between mb-6">
+                <div>
+                    <div class="section-header">Blockchain &amp; Crypto Markets</div>
+                    <div class="font-space text-4xl tracking-tight">Crypto &amp; Blockchain</div>
+                    <div class="text-white/50 mt-1">Real-time crypto for decentralized space economy, funding, data oracles &amp; compute</div>
+                </div>
+                <div class="text-xs text-white/50">Updates automatically • Yahoo Finance</div>
+            </div>
+
+            <div class="glass rounded-3xl p-1 border border-white/10">
+                <div class="overflow-auto max-h-[400px]">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="text-xs text-white/50 border-b border-white/10">
+                                <th class="text-left py-3 px-6 font-medium">Ticker</th>
+                                <th class="text-left py-3 px-6 font-medium">Asset</th>
+                                <th class="text-right py-3 px-6 font-medium">Price</th>
+                                <th class="text-right py-3 px-6 font-medium">24h Change</th>
+                                <th class="w-24"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="crypto-table" class="text-sm divide-y divide-white/10">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="mt-3 flex justify-between items-center text-xs">
+                <div class="text-white/40">Crypto for space: tokenized assets, DeFi funding, decentralized compute for simulations</div>
+                <div>
+                    <button onclick="refreshCrypto()" class="flex items-center gap-x-2 text-white/60 hover:text-white transition-colors">
+                        <i class="fa-solid fa-sync-alt text-xs"></i> 
+                        <span>Refresh now</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Portfolio -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-8" id="portfolio">
+            <div class="lg:col-span-7">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <div class="section-header">Your Mission</div>
+                        <div class="font-space text-3xl tracking-tight">Portfolio</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-white/50">TOTAL VALUE</div>
+                        <div id="portfolio-value" class="font-space text-4xl tabular-nums font-semibold money">$2,500</div>
+                    </div>
+                </div>
+
+                <div class="glass rounded-3xl p-6 border border-white/10">
+                    <div id="portfolio-holdings" class="space-y-3 min-h-[180px]">
+                        <!-- JS populated holdings -->
+                    </div>
+
+                    <div class="pt-5 mt-5 border-t border-white/10 flex gap-3">
+                        <button onclick="showInvestModal()" 
+                                class="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 text-black font-semibold flex items-center justify-center gap-x-2 hover:brightness-105 transition-all">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Invest in Market</span>
+                        </button>
+                        <button onclick="advanceTime()" 
+                                class="flex-1 py-3.5 rounded-2xl border border-white/20 hover:bg-white/5 flex items-center justify-center gap-x-2 transition-all">
+                            <i class="fa-solid fa-clock"></i>
+                            <span>Advance Time (1 Year)</span>
+                        </button>
+                    </div>
+
+                    <!-- Grok Orbital Investment Agent -->
+                    <div class="mt-4">
+                        <button onclick="showGrokAgentModal()" 
+                                class="w-full py-3 rounded-2xl border border-cyan-400/50 hover:bg-cyan-400/10 text-cyan-400 font-medium flex items-center justify-center gap-x-2 transition-all">
+                            <i class="fa-solid fa-satellite"></i>
+                            <span>Consult Grok — Orbital Investment Agent</span>
+                        </button>
+                        <div class="text-[10px] text-center text-white/40 mt-1">Powered by xAI • Gets your live portfolio + market context</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Projections -->
+            <div class="lg:col-span-5">
+                <div class="glass rounded-3xl p-3 border border-white/10 h-full flex flex-col">
+                    <div class="flex items-baseline justify-between mb-1">
+                        <div class="font-space text-lg">Growth Projections</div>
+                        <div class="text-[10px] text-white/50">10yr • Educational</div>
+                    </div>
+                    <div class="text-xs text-white/60 mb-2">Based on current portfolio + space sector returns</div>
+                    
+                    <div id="projections-content" class="flex-1 min-h-0">
+                        <!-- JS: 3 scenario cards + very short chart -->
+                    </div>
+                    
+                    <div class="text-[9px] text-white/40 pt-2 border-t border-white/10">
+                        Educational only. Highly volatile.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- News + Where to Invest -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6 text-sm">
+            
+            <!-- News (compact) -->
+            <div>
+                <div class="flex items-center justify-between mb-2 px-1">
+                    <div class="font-space text-lg tracking-tight">Real-Time Space News</div>
+                </div>
+                <div id="news-feed" class="space-y-1">
+                    <!-- Populated by JS (compact rows) -->
+                </div>
+            </div>
+
+            <!-- Where to Invest (compact) -->
+            <div>
+                <div class="font-space text-lg tracking-tight mb-2 px-1">Ready to invest for real?</div>
+                
+                <div class="glass rounded-3xl p-3 border border-white/10 space-y-1 text-xs">
+                    <div>
+                        <a href="https://www.fidelity.com/" target="_blank" class="block font-medium hover:text-cyan-400">Fidelity — Commission-free stocks &amp; ETFs</a>
+                    </div>
+                    <div>
+                        <a href="https://www.schwab.com/" target="_blank" class="block font-medium hover:text-cyan-400">Charles Schwab — Great for space ETFs</a>
+                    </div>
+                    <div>
+                        <a href="https://investor.vanguard.com/" target="_blank" class="block font-medium hover:text-cyan-400">Vanguard — Low-cost index funds (incl. ARKX)</a>
+                    </div>
+                    <div class="pt-1 border-t border-white/10 text-[10px] text-white/50">
+                        <strong>Space ETFs:</strong> ARKX (ARK Space Exploration), UFO (Procure Space ETF)
+                    </div>
+                    <div>
+                        <a href="https://www.coinbase.com/" target="_blank" class="block font-medium hover:text-cyan-400">Coinbase — Easy US crypto (BTC, ETH, SOL, LINK...)</a>
+                    </div>
+                    <div>
+                        <a href="https://www.binance.us/" target="_blank" class="block font-medium hover:text-cyan-400">Binance.US — Wide crypto selection, low fees</a>
+                    </div>
+                    <div>
+                        <a href="https://www.kraken.com/" target="_blank" class="block font-medium hover:text-cyan-400">Kraken — Secure crypto exchange, advanced trading</a>
+                    </div>
+                    <div>
+                        <a href="https://gemini.com/" target="_blank" class="block font-medium hover:text-cyan-400">Gemini — Regulated US crypto, earn on holdings</a>
+                    </div>
+                    <div class="pt-1 border-t border-white/10 text-[10px] text-white/50">
+                        <strong>Crypto for space:</strong> Use for DeFi funding, satellite data oracles (LINK), decentralized compute (RNDR). DYOR. Not financial advice.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Feedback & Support / Monetization -->
+    <div class="max-w-5xl mx-auto px-6 pb-16" id="support">
+        <div class="glass rounded-3xl p-8 border border-white/10">
+            <div class="text-center mb-6">
+                <div class="font-space text-3xl tracking-tight">Help Shape the Future of Cislunar Investing</div>
+                <p class="text-white/70 mt-2 max-w-md mx-auto">
+                    LUNARA is a free educational tool. Your feedback helps us improve it, and your support keeps the real-time data and simulations running.
+                </p>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Feedback -->
+                <div>
+                    <h4 class="font-semibold mb-3 flex items-center gap-x-2">
+                        <i class="fa-solid fa-comment text-cyan-400"></i> 
+                        <span>Give Feedback</span>
+                    </h4>
+                    <form id="feedback-form" action="https://formspree.io/f/mpqekzpz" method="POST" accept-charset="UTF-8" class="space-y-3">
+                        <input type="hidden" name="_subject" value="LUNARA Feedback">
+                        <input type="email" name="email" placeholder="Your email (optional)" class="w-full bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm">
+                        <textarea name="message" rows="3" required placeholder="What do you like? What should we add or fix? Ideas for new cislunar assets?" class="w-full bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm"></textarea>
+                        <button type="submit" class="w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-sm font-medium transition-colors">
+                            Send Feedback
+                        </button>
+                    </form>
+
+                    <!-- Success message (shown by JS after successful submission) -->
+                    <div id="feedback-success" class="hidden mt-3 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+                        Thank you! Your feedback was sent successfully. 🌕
+                    </div>
+
+                    <p class="text-[10px] text-white/50 mt-2">
+                        Or <a href="https://github.com/cyborgambitions/lunara/issues/new?title=LUNARA%20Feedback&body=**What%20I%20liked:**%0A%0A**What%20to%20improve%20or%20fix:**%0A%0A**New%20cislunar%20ideas%20or%20features:**%0A%0A" target="_blank" class="underline">open an issue on GitHub</a> for public discussion.
+                    </p>
+
+                    <!-- Lightweight vanilla JS for AJAX submit (no extra libraries, matches your static + vanilla JS stack) -->
+                    <script>
+                      (function() {
+                        const form = document.getElementById('feedback-form');
+                        const success = document.getElementById('feedback-success');
+                        if (!form || !success) return;
+
+                        form.addEventListener('submit', async function(e) {
+                          e.preventDefault();
+
+                          const btn = form.querySelector('button[type="submit"]');
+                          const originalText = btn ? btn.textContent : '';
+                          if (btn) {
+                            btn.disabled = true;
+                            btn.textContent = 'Sending...';
+                          }
+
+                          try {
+                            const response = await fetch(form.action, {
+                              method: 'POST',
+                              body: new FormData(form),
+                              headers: { 'Accept': 'application/json' }
+                            });
+
+                            if (response.ok) {
+                              form.reset();
+                              success.classList.remove('hidden');
+                              setTimeout(() => {
+                                success.classList.add('hidden');
+                              }, 6000);
+                            } else {
+                              // Fallback: direct the user to the GitHub issue link
+                              alert('Thanks! The direct form had an issue. Please use the "open an issue on GitHub" link below instead.');
+                            }
+                          } catch (err) {
+                            alert('Network error. Please try the GitHub issue link as a backup.');
+                          } finally {
+                            if (btn) {
+                              btn.disabled = false;
+                              btn.textContent = originalText;
+                            }
+                          }
+                        });
+                      })();
+                    </script>
+                </div>
+
+                <!-- Support & Monetization -->
+                <div>
+                    <h4 class="font-semibold mb-3 flex items-center gap-x-2">
+                        <i class="fa-solid fa-heart text-pink-400"></i> 
+                        <span>Support Lunara &amp; Monetization Options</span>
+                    </h4>
+
+                    <div class="space-y-3 text-sm">
+                        <a href="https://github.com/sponsors/cyborgambitions" target="_blank" 
+                           class="flex items-center justify-between glass hover:bg-white/10 transition-colors p-3 rounded-2xl border border-white/10">
+                            <div>
+                                <div class="font-medium">GitHub Sponsors</div>
+                                <div class="text-xs text-white/50">Monthly support for ongoing development</div>
+                            </div>
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                        </a>
+
+                        <a href="https://buymeacoffee.com/lunara" target="_blank" 
+                           class="flex items-center justify-between glass hover:bg-white/10 transition-colors p-3 rounded-2xl border border-white/10">
+                            <div>
+                                <div class="font-medium">Buy Me a Coffee / Ko-fi</div>
+                                <div class="text-xs text-white/50">One-time tip to keep the APIs running</div>
+                            </div>
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                        </a>
+
+                        <div class="glass p-3 rounded-2xl border border-white/10">
+                            <div class="font-medium mb-1">Premium Coming Soon</div>
+                            <div class="text-xs text-white/60">Unlock advanced Monte Carlo simulations, custom cislunar scenarios, CSV exports, and ad-free experience.</div>
+                            <a href="https://forms.gle/your-premium-waitlist" target="_blank" class="text-xs underline text-cyan-400">Join the waitlist →</a>
+                        </div>
+
+                        <div class="text-[10px] text-white/50">
+                            <strong>Business / Sponsorship:</strong> Space companies, crypto projects, and educators — reach out for featured placements, custom simulations, or newsletter sponsorships.
+                            <br>
+                            Affiliate revenue from the "Where to Invest" links (Coinbase, Fidelity, etc.) helps sustain free access.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="border-t border-white/10 py-8 text-center text-xs text-white/40">
+        LUNARA is an educational simulator. Real investing involves risk. Data for informational purposes only. 
+        <br class="hidden sm:inline"> 
+        Built as a passion project to make the cislunar economy more accessible.
+    </footer>
+
+    <!-- Grok Orbital Investment Agent Modal -->
+    <div id="grok-agent-modal" onclick="if (event.target.id === 'grok-agent-modal') hideGrokAgentModal()" class="hidden fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4">
+        <div class="glass max-w-2xl w-full rounded-3xl border border-cyan-400/30 overflow-hidden" onclick="event.stopImmediatePropagation()">
+            <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-black/40">
+                <div>
+                    <div class="font-space text-xl flex items-center gap-x-2">
+                        <i class="fa-solid fa-satellite text-cyan-400"></i>
+                        <span>Grok — Orbital Investment Agent</span>
+                    </div>
+                    <div class="text-[10px] text-white/50">xAI • Context-aware cislunar strategist</div>
+                </div>
+                <button onclick="hideGrokAgentModal()" class="text-white/60 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+
+            <div class="p-6">
+                <!-- Quick prompts -->
+                <div class="mb-4">
+                    <div class="text-xs uppercase tracking-widest text-white/50 mb-2">Quick Agent Prompts</div>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="sendQuickGrokPrompt('Analyze my current portfolio and suggest 2-3 high-conviction moves for long-term cislunar value.')" class="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10">Analyze my portfolio</button>
+                        <button onclick="sendQuickGrokPrompt('With my remaining cash, what real space or crypto positions should I add right now and why?')" class="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10">Best uses of remaining cash</button>
+                        <button onclick="sendQuickGrokPrompt('Give me a risk assessment of my current holdings and how they map to the cislunar economy.')" class="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10">Risk assessment</button>
+                        <button onclick="sendQuickGrokPrompt('Which combination of my holdings + new positions would give the strongest 5-10 year cislunar growth profile?')" class="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10">Optimize for 5-10 year growth</button>
+                    </div>
+                </div>
+
+                <!-- Chat -->
+                <div id="grok-chat" class="bg-black/30 border border-white/10 rounded-2xl h-64 overflow-y-auto p-4 mb-4 text-sm space-y-3">
+                    <!-- Messages populated by JS -->
+                </div>
+
+                <div class="flex gap-2">
+                    <input id="grok-input" type="text" class="flex-1 bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm focus:outline-none focus:border-cyan-400" placeholder="Ask Grok anything about your cislunar portfolio...">
+                    <button onclick="sendGrokMessage()" class="px-6 rounded-2xl bg-cyan-400 text-black font-semibold">Send</button>
+                </div>
+                <div class="text-[10px] text-white/40 mt-2 text-center">Grok has full context of your live portfolio, holdings, and current market data.</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
