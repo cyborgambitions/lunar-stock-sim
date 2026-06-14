@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+httpx
+python-multipart
+pydantic
+yfinance
+feedparser
+beautifulsoup4
