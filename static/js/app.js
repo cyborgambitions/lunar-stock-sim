@@ -19,6 +19,8 @@ function formatPrice(price) {
 }
 
 async function fetchStocks() {
+    // Used for initial load and manual refresh.
+    // Normal live updates now come from the SSE long stream (/api/market/stream).
     try {
         const res = await fetch('/api/stocks?t=' + Date.now());
         const data = await res.json();
@@ -31,6 +33,8 @@ async function fetchStocks() {
 }
 
 async function fetchCrypto() {
+    // Used for initial load and manual refresh.
+    // Normal live updates now come from the SSE long stream (/api/market/stream).
     try {
         const res = await fetch('/api/crypto?t=' + Date.now());
         const data = await res.json();
@@ -626,18 +630,20 @@ function savePortfolio() {
 }
 
 async function refreshStocks() {
+    // Manual refresh helper (still useful for one-off updates).
+    // Live data is primarily delivered via SSE long stream.
     await fetchStocks();
 }
 
 async function initApp() {
     initPortfolio();
 
-    // Initial data load
-    await Promise.all([
-        fetchStocks(),
-        fetchCrypto(),
-        fetchNews()
-    ]);
+    // Start the long-lived SSE stream first so we get market data via the stream
+    // (the backend now pushes an immediate snapshot on connect).
+    setupMarketStream();
+
+    // Initial data load - news is relatively static (slow changing).
+    await fetchNews();
 
     renderPortfolio();
 
@@ -648,13 +654,25 @@ async function initApp() {
       console.error('3D moon init failed (non-fatal):', e);
     }
 
-    // ============ LONG STREAM / SSE INTEGRATION ============
-    // Live market data updates via Server-Sent Events (long-lived stream)
+    // Start long-lived SSE stream early (it sends immediate snapshot)
+    setupMarketStream();
+
+    // News is slower-changing → light polling is acceptable
+    setInterval(fetchNews, 5 * 60 * 1000);
+
+    console.log('%c[LUNARA] Initialized with SSE long stream for market data + real aerospace/crypto feeds.', 'color:#64748b');
+}
+
+// ============ SSE / LONG-LIVED STREAM (moved out for early start) ============
+// Primary mechanism for live market updates. Replaces static/polling.
+function setupMarketStream() {
     try {
         const marketStream = new EventSource('/api/market/stream');
+
         marketStream.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+
                 if (data.stocks && data.stocks.length > 0) {
                     stocksData = data.stocks;
                     renderMarket();
@@ -668,21 +686,18 @@ async function initApp() {
                 console.warn('Stream parse error', parseErr);
             }
         };
-        marketStream.onerror = (err) => {
-            console.warn('Market SSE stream error (falling back to polling)', err);
-            // Polling will continue as backup
+
+        marketStream.onopen = () => {
+            console.log('%c[LUNARA] SSE stream connected (long-lived).', 'color:#34d399');
         };
-        console.log('%c[LUNARA] Long-lived market data stream connected (SSE).', 'color:#34d399');
+
+        marketStream.onerror = (err) => {
+            console.warn('[LUNARA] SSE stream error. Browser will auto-reconnect.', err);
+        };
+
     } catch (e) {
-        console.warn('EventSource not available or failed, using polling fallback only.');
+        console.error('[LUNARA] EventSource failed to initialize. Live updates disabled.', e);
     }
-
-    // Fallback polling (in case SSE fails or for news)
-    setInterval(fetchStocks, 45000);
-    setInterval(fetchCrypto, 60000);
-    setInterval(fetchNews, 5 * 60 * 1000);
-
-    console.log('%c[LUNARA] Educational cislunar simulator initialized with real aerospace data + live stream.', 'color:#64748b');
 }
 
 // ===================== GROK ORBITAL INVESTMENT AGENT =====================

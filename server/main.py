@@ -9,7 +9,8 @@ import asyncio
 import httpx
 import feedparser
 from bs4 import BeautifulSoup
-import yfinance as yf
+# yfinance removed from price fetching to avoid GraphQL validation errors from Yahoo
+# (see _fetch_one_yahoo_price)
 
 app = FastAPI(title="LUNARA - Cislunar Economy Portfolio Simulator")
 
@@ -83,14 +84,25 @@ async def _fetch_one_yahoo_price(symbol: str, name: str, default_sector: str):
                 r = await client.get(f"{YAHOO_CHART_API}/{symbol}", params={"interval": "1d", "range": "2d"})
                 if r.status_code == 200:
                     j = r.json()
-                    result = j.get("chart", {}).get("result", [{}])[0]
-                    meta = result.get("meta", {})
-                    quote = result.get("indicators", {}).get("quote", [{}])[0]
-                    closes = [c for c in quote.get("close", []) if c is not None]
-                    if len(closes) >= 2:
-                        price = closes[-1]
+                    chart = j.get("chart", {})
+                    # Check for explicit errors from Yahoo (sometimes GraphQL style errors appear here)
+                    if chart.get("error"):
+                        # Skip this ticker for now, will retry via HTML or other calls
+                        pass
                     else:
+                        result = chart.get("result", [{}])[0]
+                        meta = result.get("meta", {})
+                        quote = result.get("indicators", {}).get("quote", [{}])[0]
+                        closes = [c for c in quote.get("close", []) if c is not None]
+
                         price = meta.get("regularMarketPrice") or meta.get("previousClose") or 0
+                        if len(closes) >= 1:
+                            price = closes[-1]
+
+                        # Compute change % from previous close in meta when available (more reliable)
+                        prev_close = meta.get("previousClose") or (closes[-2] if len(closes) >= 2 else None)
+                        if prev_close and price and prev_close != 0 and ch == 0:
+                            ch = ((price - prev_close) / prev_close * 100)
     except Exception:
         pass
 
@@ -130,18 +142,28 @@ async def _fetch_one_yahoo_price(symbol: str, name: str, default_sector: str):
         except Exception:
             pass
 
-    # Ultimate fallback using yfinance (your debug script style) if still no good change
-    if ch == 0 or price == 0:
+    # yfinance completely removed from price path to avoid GraphQL validation errors
+    # from Yahoo's internal API:
+    # {"errors":[{"message":"GraphQL validation failed","extensions":{"code":"GRAPHQL_VALIDATION_FAILED"}}]}
+    # All pricing now comes from direct chart endpoint + HTML scraping only.
+
+    # If we still have no price after chart + HTML, try one more direct chart call
+    if price == 0:
         try:
-            t = yf.Ticker(symbol)
-            info = t.info or {}
-            if price == 0:
-                price = info.get("regularMarketPrice") or info.get("previousClose") or 0
-            if ch == 0:
-                curr = info.get("regularMarketPrice") or price
-                prev = info.get("regularMarketPreviousClose") or info.get("previousClose")
-                if prev and curr and prev != 0:
-                    ch = ((curr - prev) / prev * 100)
+            async with _fetch_sem:
+                async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
+                    r = await client.get(f"{YAHOO_CHART_API}/{symbol}", params={"interval": "1d", "range": "5d"})
+                    if r.status_code == 200:
+                        j = r.json()
+                        result = j.get("chart", {}).get("result", [{}])[0]
+                        if result.get("error"):
+                            # Yahoo returned error for this symbol, leave price at 0
+                            pass
+                        else:
+                            meta = result.get("meta", {})
+                            quote = result.get("indicators", {}).get("quote", [{}])[0]
+                            closes = [c for c in quote.get("close", []) if c is not None]
+                            price = meta.get("regularMarketPrice") or (closes[-1] if closes else 0)
         except Exception:
             pass
 
@@ -168,6 +190,13 @@ async def _fetch_price_data(tickers_with_names, default_sector="Market"):
             continue
         data.append(r)
 
+    # If some tickers failed this round, try to keep previous values so the UI doesn't go blank
+    if cached and len(data) < len(cached["data"]):
+        prev_map = {item["ticker"]: item for item in cached["data"]}
+        for item in data:
+            prev_map[item["ticker"]] = item
+        data = list(prev_map.values())
+
     _market_cache[cache_key] = {"data": data, "ts": now}
     return data
 
@@ -188,7 +217,7 @@ async def api_stocks():
         "source": "Yahoo Finance direct (v8/chart, cached)"
     }
 
-# Crypto & Blockchain tickers (real-time via yfinance) + select space equities
+# Crypto & Blockchain tickers (real-time via direct Yahoo endpoints) + select space equities
 CRYPTO_TICKERS = [
     ("BTC-USD", "Bitcoin"),
     ("ETH-USD", "Ethereum"),
@@ -257,6 +286,17 @@ async def _start_market_refresher():
 async def stream_market():
     """Server-Sent Events endpoint for real-time market data updates."""
     async def event_generator():
+        # Send current snapshot immediately on connect (good for initial data via SSE)
+        try:
+            initial = {
+                "stocks": live_market["stocks"] or [],
+                "cryptos": live_market["cryptos"] or [],
+                "updated": live_market["updated"] or datetime.utcnow().isoformat() + "Z"
+            }
+            yield f"data: {json.dumps(initial)}\n\n"
+        except Exception:
+            pass
+
         while True:
             try:
                 data = {
@@ -265,7 +305,7 @@ async def stream_market():
                     "updated": live_market["updated"] or datetime.utcnow().isoformat() + "Z"
                 }
                 yield f"data: {json.dumps(data)}\n\n"
-                await asyncio.sleep(5)  # push every 5s to clients
+                await asyncio.sleep(5)  # push cadence
             except Exception:
                 await asyncio.sleep(5)
     return StreamingResponse(event_generator(), media_type="text/event-stream")

@@ -56,7 +56,7 @@ A `render.yaml` and `Procfile` are included for one-click / zero-config deploys.
 Alternative platforms: Railway, Fly.io, or any service that supports Python web apps.
 
 **Important for production:**
-- yfinance has rate limits. Consider adding caching (Redis or in-memory with TTL) for the stock/crypto endpoints if you get heavy traffic.
+- Direct Yahoo endpoints can be rate-limited. We already have in-memory caching + semaphore.
 - The current news fetch uses public RSS feeds — add caching or a small cache layer for production.
 
 ## Feedback
@@ -129,7 +129,7 @@ This keeps the spirit educational while creating sustainable revenue.
 
 ## Development Notes
 
-- Real-time stock/crypto data via yfinance (rate-limit friendly for light use).
+- Real-time stock/crypto data via direct Yahoo Finance endpoints (much more stable, avoids yfinance GraphQL issues).
 - News via public RSS feeds.
 - Portfolio & projections are client-side (localStorage) for now — easy to make server-persisted later.
 - 3D moon uses real NASA-derived textures.
