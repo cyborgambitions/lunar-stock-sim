@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
+import json
 from fastapi.staticfiles import StaticFiles
 import os
 import uvicorn
@@ -8,6 +9,7 @@ import asyncio
 import httpx
 import feedparser
 from bs4 import BeautifulSoup
+import yfinance as yf
 
 app = FastAPI(title="LUNARA - Cislunar Economy Portfolio Simulator")
 
@@ -16,6 +18,18 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Mount static frontend
 static_dir = os.path.join(PROJECT_ROOT, "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+# Hard-coded Grok logo favicon (inline SVG - no external file or 404s)
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    # Grok / xAI style: black rounded square + white orbital symbol
+    svg = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="5" fill="#000000"/>
+  <circle cx="16" cy="16" r="11" fill="none" stroke="#ffffff" stroke-width="2.2"/>
+  <path d="M11 11 L16 21 L21 11" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="16" cy="16" r="3.5" fill="#ffffff"/>
+</svg>'''
+    return Response(content=svg, media_type="image/svg+xml")
 
 # Real aerospace tickers for the Lunar Market
 AEROSPACE_TICKERS = [
@@ -59,45 +73,79 @@ async def _fetch_one_yahoo_price(symbol: str, name: str, default_sector: str):
         "Accept": "application/json,text/html",
         "Referer": "https://finance.yahoo.com/",
     }
-    # Try reliable endpoint first
+    price = 0.0
+    ch = 0.0
+
+    # Get price from reliable chart endpoint (range 2d for stability)
     try:
         async with _fetch_sem:
             async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
-                r = await client.get(f"{YAHOO_CHART_API}/{symbol}", params={"interval": "1d", "range": "1d"})
+                r = await client.get(f"{YAHOO_CHART_API}/{symbol}", params={"interval": "1d", "range": "2d"})
                 if r.status_code == 200:
                     j = r.json()
-                    meta = j.get("chart", {}).get("result", [{}])[0].get("meta", {})
-                    price = meta.get("regularMarketPrice") or meta.get("previousClose") or 0
-                    prev = meta.get("previousClose") or price
-                    ch = ((price - prev) / prev * 100) if prev and price and prev != 0 else 0
-                    return {"ticker": symbol, "name": name, "price": round(float(price), 2) if price else 0.0, "change": round(float(ch), 2), "sector": default_sector}
+                    result = j.get("chart", {}).get("result", [{}])[0]
+                    meta = result.get("meta", {})
+                    quote = result.get("indicators", {}).get("quote", [{}])[0]
+                    closes = [c for c in quote.get("close", []) if c is not None]
+                    if len(closes) >= 2:
+                        price = closes[-1]
+                    else:
+                        price = meta.get("regularMarketPrice") or meta.get("previousClose") or 0
     except Exception:
         pass
 
-    # Yahoo Finance scrape fallback (fin-streamer tags)
+    # Always try to get accurate 24h change from the HTML page (most reliable for current %)
     try:
         async with _fetch_sem:
             async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
                 r = await client.get(f"https://finance.yahoo.com/quote/{symbol}")
                 if r.status_code == 200:
                     soup = BeautifulSoup(r.text, "html.parser")
-                    price_el = soup.find("fin-streamer", {"data-field": "regularMarketPrice"}) or soup.find("fin-streamer", {"data-test": "qsp-price"})
+                    # price from HTML as backup
+                    if price == 0:
+                        price_el = soup.find("fin-streamer", {"data-field": "regularMarketPrice"}) or soup.find("fin-streamer", {"data-test": "qsp-price"})
+                        if price_el:
+                            price = float(str(price_el.text).replace(",", "").replace("$", "").strip() or 0)
+                    # change from HTML - this is the key for accurate 24h %
                     change_el = soup.find("fin-streamer", {"data-field": "regularMarketChangePercent"})
-                    price = 0.0
-                    if price_el:
-                        price = float(str(price_el.text).replace(",", "").replace("$", "").strip() or 0)
-                    ch = 0.0
                     if change_el:
                         ch_str = str(change_el.text).replace("%", "").replace("+", "").replace(",", "").strip()
                         try:
                             ch = float(ch_str)
                         except:
                             ch = 0.0
-                    return {"ticker": symbol, "name": name, "price": round(price, 2), "change": round(ch, 2), "sector": default_sector}
     except Exception:
         pass
 
-    return {"ticker": symbol, "name": name, "price": 0.0, "change": 0.0, "sector": default_sector}
+    # Final fallback if everything failed
+    if price == 0:
+        try:
+            async with _fetch_sem:
+                async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
+                    r = await client.get(f"{YAHOO_CHART_API}/{symbol}", params={"interval": "1d", "range": "1d"})
+                    if r.status_code == 200:
+                        j = r.json()
+                        meta = j.get("chart", {}).get("result", [{}])[0].get("meta", {})
+                        price = meta.get("regularMarketPrice") or meta.get("previousClose") or 0
+        except Exception:
+            pass
+
+    # Ultimate fallback using yfinance (your debug script style) if still no good change
+    if ch == 0 or price == 0:
+        try:
+            t = yf.Ticker(symbol)
+            info = t.info or {}
+            if price == 0:
+                price = info.get("regularMarketPrice") or info.get("previousClose") or 0
+            if ch == 0:
+                curr = info.get("regularMarketPrice") or price
+                prev = info.get("regularMarketPreviousClose") or info.get("previousClose")
+                if prev and curr and prev != 0:
+                    ch = ((curr - prev) / prev * 100)
+        except Exception:
+            pass
+
+    return {"ticker": symbol, "name": name, "price": round(float(price), 2) if price else 0.0, "change": round(float(ch), 2), "sector": default_sector}
 
 
 async def _fetch_price_data(tickers_with_names, default_sector="Market"):
@@ -127,6 +175,12 @@ async def _fetch_price_data(tickers_with_names, default_sector="Market"):
 @app.get("/api/stocks")
 async def api_stocks():
     """Real-time aerospace industry market data (used by the Lunar Market tab)."""
+    if live_market["stocks"]:
+        return {
+            "stocks": live_market["stocks"],
+            "updated": live_market["updated"],
+            "source": "Yahoo Finance direct (v8/chart, live stream)"
+        }
     stocks = await _fetch_price_data(AEROSPACE_TICKERS, "Aerospace & Defense")
     return {
         "stocks": stocks,
@@ -155,6 +209,12 @@ CRYPTO_TICKERS = [
 @app.get("/api/crypto")
 async def api_crypto():
     """Real-time crypto and blockchain investments."""
+    if live_market["cryptos"]:
+        return {
+            "cryptos": live_market["cryptos"],
+            "updated": live_market["updated"],
+            "source": "Yahoo Finance direct (v8/chart, live stream)"
+        }
     cryptos = await _fetch_price_data(CRYPTO_TICKERS, "Cryptocurrency / Blockchain")
     return {
         "cryptos": cryptos,
@@ -167,6 +227,49 @@ SPACE_FEEDS = [
     "https://www.space.com/feeds/all",
     "https://spacenews.com/feed/"
 ]
+
+# ============ LONG STREAM / SSE MARKET DATA INTEGRATION ============
+# Shared live market data refreshed in background for efficient streaming
+live_market = {
+    "stocks": [],
+    "cryptos": [],
+    "updated": ""
+}
+
+async def _refresh_live_market():
+    """Background refresher to keep data hot for all streaming clients."""
+    while True:
+        try:
+            live_market["stocks"] = await _fetch_price_data(AEROSPACE_TICKERS, "Aerospace & Defense")
+            live_market["cryptos"] = await _fetch_price_data(CRYPTO_TICKERS, "Cryptocurrency / Blockchain")
+            live_market["updated"] = datetime.utcnow().isoformat() + "Z"
+        except Exception as e:
+            print(f"[LUNARA] Live market refresh error: {e}")
+        await asyncio.sleep(15)  # refresh every 15s (Yahoo friendly)
+
+@app.on_event("startup")
+async def _start_market_refresher():
+    asyncio.create_task(_refresh_live_market())
+    print("[LUNARA] Long-lived market data stream refresher started.")
+
+# Combined SSE stream for live market updates (stocks + crypto)
+@app.get("/api/market/stream")
+async def stream_market():
+    """Server-Sent Events endpoint for real-time market data updates."""
+    async def event_generator():
+        while True:
+            try:
+                data = {
+                    "stocks": live_market["stocks"] or [],
+                    "cryptos": live_market["cryptos"] or [],
+                    "updated": live_market["updated"] or datetime.utcnow().isoformat() + "Z"
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+                await asyncio.sleep(5)  # push every 5s to clients
+            except Exception:
+                await asyncio.sleep(5)
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 
 # Simple in-memory cache for daily refresh (no extra deps, survives restarts via first fetch)
 news_cache = {"news": [], "updated": None}

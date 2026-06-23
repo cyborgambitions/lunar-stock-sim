@@ -4,24 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LUNARA • Cislunar Economy Simulator</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Hard-coded Grok logo as favicon (inline SVG data URL for reliability) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32'%3E%3Crect width='32' height='32' rx='5' fill='%23000000'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23ffffff' stroke-width='2.2'/%3E%3Cpath d='M11 11 L16 21 L21 11' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%23ffffff'/%3E%3C/svg%3E">
+    <!-- Local Tailwind CSS (built with standalone CLI, no external deps) -->
+    <link rel="stylesheet" href="/static/css/tailwind.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
-        
         :root {
             --space-black: #0a0b0f;
             --deep-navy: #0f172a;
         }
         
         body {
-            font-family: 'Inter', system-ui, sans-serif;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
         
         .font-space {
-            font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-weight: 600;
             letter-spacing: -0.03em;
         }
@@ -302,7 +303,7 @@
                 <div class="glass rounded-3xl p-3 border border-white/10 h-full flex flex-col">
                     <div class="flex items-baseline justify-between mb-1">
                         <div class="font-space text-lg">Growth Projections</div>
-                        <div class="text-[10px] text-white/50">10yr • Educational</div>
+                        <div class="text-[10px] text-white/50">10yr • Educational (space/cislunar)</div>
                     </div>
                     <div class="text-xs text-white/60 mb-2">Based on current portfolio + space sector returns</div>
                     
@@ -467,7 +468,7 @@
                             <i class="fa-solid fa-arrow-up-right-from-square"></i>
                         </a>
 
-                        <a href="https://buymeacoffee.com/lunara" target="_blank" 
+                        <a href="https://buymeacoffee.com/cyborgambitions?new=1" target="_blank" 
                            class="flex items-center justify-between glass hover:bg-white/10 transition-colors p-3 rounded-2xl border border-white/10">
                             <div>
                                 <div class="font-medium">Buy Me a Coffee / Ko-fi</div>

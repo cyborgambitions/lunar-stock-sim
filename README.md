@@ -33,6 +33,12 @@ Open http://localhost:8765
 
 The server has hot reload. The frontend is in `static/`.
 
+### Tailwind CSS
+- Built locally to `static/css/tailwind.min.css` (no CDN in production).
+- Run `.\rebuild-tailwind.ps1` (Windows) or the equivalent after adding classes.
+- See `tailwind.config.js` and `static/css/input.css`.
+- The standalone CLI binary (`tailwindcss.exe`) is gitignored; download from https://tailwindcss.com/docs/installation when needed.
+
 ## Deployment (Publish for Feedback)
 
 ### Recommended: Render.com (free tier works well)

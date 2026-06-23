@@ -20,7 +20,7 @@ function formatPrice(price) {
 
 async function fetchStocks() {
     try {
-        const res = await fetch('/api/stocks');
+        const res = await fetch('/api/stocks?t=' + Date.now());
         const data = await res.json();
         stocksData = data.stocks;
         renderMarket();
@@ -32,7 +32,7 @@ async function fetchStocks() {
 
 async function fetchCrypto() {
     try {
-        const res = await fetch('/api/crypto');
+        const res = await fetch('/api/crypto?t=' + Date.now());
         const data = await res.json();
         cryptoData = data.cryptos;
         renderCryptoMarket();
@@ -85,7 +85,7 @@ function renderMarket() {
             </td>
             <td class="py-4 px-6">
                 <div class="flex items-center gap-2 justify-end">
-                    <input type="number" id="qty-${stock.ticker}" value="10" min="1" step="1" 
+                    <input type="number" id="qty-s-${stock.ticker}" value="10" min="1" step="1" 
                            class="w-16 bg-white/5 border border-white/20 rounded px-2 py-1 text-sm text-right">
                     <button onclick="buyStockFromInput('${stock.ticker}')" 
                             class="px-4 py-1 text-xs bg-emerald-500/80 hover:bg-emerald-400 text-black rounded-2xl transition-colors font-medium">
@@ -124,7 +124,7 @@ function renderCryptoMarket() {
             </td>
             <td class="py-4 px-6">
                 <div class="flex items-center gap-2 justify-end">
-                    <input type="number" id="qty-${coin.ticker}" value="0.1" min="0.001" step="0.001" 
+                    <input type="number" id="qty-c-${coin.ticker}" value="0.1" min="0.001" step="0.001" 
                            class="w-20 bg-white/5 border border-white/20 rounded px-2 py-1 text-sm text-right">
                     <button onclick="buyCryptoFromInput('${coin.ticker}')" 
                             class="px-4 py-1 text-xs bg-emerald-500/80 hover:bg-emerald-400 text-black rounded-2xl transition-colors font-medium">
@@ -183,7 +183,7 @@ function buyAsset(ticker, amount, isCrypto = false) {
 }
 
 function buyStockFromInput(ticker) {
-    const input = document.getElementById(`qty-${ticker}`);
+    const input = document.getElementById(`qty-s-${ticker}`);
     if (!input) return;
     const shares = parseInt(input.value) || 0;
     if (shares <= 0) {
@@ -194,7 +194,7 @@ function buyStockFromInput(ticker) {
 }
 
 function buyCryptoFromInput(ticker) {
-    const input = document.getElementById(`qty-${ticker}`);
+    const input = document.getElementById(`qty-c-${ticker}`);
     if (!input) return;
     const amount = parseFloat(input.value) || 0;
     if (amount <= 0) {
@@ -269,7 +269,7 @@ function updatePortfolioValue() {
     renderPortfolio();
 }
 
-function updateProjections() {
+async function updateProjections() {
     const container = document.getElementById('projections-content');
     if (!container) return;
 
@@ -291,92 +291,60 @@ function updateProjections() {
         return;
     }
 
-    const years = 10;
-    const labels = Array.from({ length: years + 1 }, (_, i) => `Y${i}`);
+    // Use server-side projections for accuracy (calls the reliable backend)
+    let projectionsData;
+    try {
+        const resp = await fetch('/api/projections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_value: currentValue, years: 10 })
+        });
+        projectionsData = await resp.json();
+    } catch (e) {
+        // fallback client calc if backend fails
+        projectionsData = {
+            current_value: currentValue,
+            optimistic: Math.round(currentValue * Math.pow(1.18, 10)),
+            base: Math.round(currentValue * Math.pow(1.10, 10)),
+            pessimistic: Math.round(currentValue * Math.pow(1.03, 10))
+        };
+    }
 
-    // Educational CAGR assumptions for the space/aerospace sector (high growth + high volatility)
-    // These are illustrative only — real returns vary wildly year to year.
+    const opt = projectionsData.optimistic || projectionsData.base * 1.8;
+    const base = projectionsData.base || currentValue * 2.5;
+    const pess = projectionsData.pessimistic || currentValue * 1.3;
+
     const scenarios = [
-        { name: 'Pessimistic', cagr: 0.04, color: '#f87171' },   // ~4%
-        { name: 'Base Case',   cagr: 0.12, color: '#fbbf24' },   // ~12%
-        { name: 'Optimistic',  cagr: 0.22, color: '#34d399' }    // ~22%
+        { name: 'Pessimistic', value: pess, color: '#f87171', mult: (pess / currentValue).toFixed(1) },
+        { name: 'Base Case', value: base, color: '#fbbf24', mult: (base / currentValue).toFixed(1) },
+        { name: 'Optimistic', value: opt, color: '#34d399', mult: (opt / currentValue).toFixed(1) }
     ];
 
-    const projections = scenarios.map(sc => {
-        const values = [currentValue];
-        for (let y = 1; y <= years; y++) {
-            values.push(Math.round(currentValue * Math.pow(1 + sc.cagr, y)));
-        }
-        return { ...sc, values };
-    });
-
-    // Build compact cards + way shorter chart (no extra scrolling)
-    let html = `
-        <div class="grid grid-cols-3 gap-1 mb-1 text-center">
-    `;
-    projections.forEach(p => {
-        const final = p.values[years];
-        const multiple = (final / currentValue).toFixed(1);
+    let html = `<div class="grid grid-cols-3 gap-1 mb-1 text-center">`;
+    scenarios.forEach(p => {
         html += `
             <div class="bg-white/5 p-1 rounded">
                 <div class="text-[8px] leading-none text-white/50">${p.name}</div>
                 <div class="text-sm font-semibold tabular-nums leading-none" style="color:${p.color}">
-                    $${final.toLocaleString()}
+                    $${p.value.toLocaleString()}
                 </div>
-                <div class="text-[8px] leading-none text-white/40">${multiple}x</div>
+                <div class="text-[8px] leading-none text-white/40">${p.mult}x</div>
             </div>
         `;
     });
     html += `</div>`;
 
-    // Way shorter chart
-    html += `<canvas id="projections-chart" class="w-full h-8" style="max-height:32px"></canvas>`;
+    // Simple bar representation instead of broken chart for compactness
+    html += `
+        <div class="flex items-end gap-1 h-7 mt-1">
+            <div class="flex-1 bg-[#f87171] rounded" style="height: 30%"></div>
+            <div class="flex-1 bg-[#fbbf24] rounded" style="height: 65%"></div>
+            <div class="flex-1 bg-[#34d399] rounded" style="height: 100%"></div>
+        </div>
+        <div class="text-[7px] text-white/40 text-center mt-0.5">10-year educational projection (space sector CAGR)</div>
+    `;
+
     container.innerHTML = html;
-
-    // Draw Chart.js line chart
-    const ctx = document.getElementById('projections-chart');
-    if (window.projectionsChart) window.projectionsChart.destroy();
-
-    const datasets = projections.map(p => ({
-        label: p.name,
-        data: p.values,
-        borderColor: p.color,
-        borderWidth: 2.5,
-        tension: 0.3,
-        fill: false,
-        pointRadius: 0,
-        pointHoverRadius: 3
-    }));
-
-    window.projectionsChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: datasets
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: (ctx) => '$' + ctx.raw.toLocaleString()
-                    }
-                }
-            },
-            scales: {
-                x: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#64748b', font: { size: 8 } } },
-                y: { 
-                    grid: { color: 'rgba(255,255,255,0.06)' }, 
-                    ticks: { 
-                        color: '#64748b', 
-                        font: { size: 8 },
-                        callback: (v) => '$' + (v/1000) + 'k'
-                    } 
-                }
-            },
-            elements: { line: { borderWidth: 2.5 } }
         }
     });
 }
@@ -433,7 +401,7 @@ async function advanceTime() {
     alert("1 year advanced! Prices have moved based on realistic volatility in the space sector.\n\nRemember: This is educational — real markets are much more complex.");
 }
 
-// Realistic 3D Moon using real NASA-derived textures (color + normal map for craters and surface detail)
+// Realistic 3D Moon using real NASA-derived texture (color + bump from jpg for craters)
 function initThreeMoon(containerId = 'hero-moon') {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -443,26 +411,40 @@ function initThreeMoon(containerId = 'hero-moon') {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(1); // 1 for best perf, avoids high DPI cost
     container.appendChild(renderer.domElement);
 
-    // Real moon textures (public domain / NASA derived, commonly used in 3D demos)
+    // Real moon textures - LOCAL FIRST (recommended)
+    // moon_1024.jpg must be in static/textures/  (provides color + bump for craters)
+    // (Optional: drop a real moon_1024_normal.jpg for extra detail)
+    const geometry = new THREE.SphereGeometry(1.9, 64, 64);
     const textureLoader = new THREE.TextureLoader();
-    const moonTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/moon_1024.jpg');
-    const moonNormal = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/moon_1024_normal.jpg');
 
-    // High-detail moon sphere
-    const geometry = new THREE.SphereGeometry(1.9, 128, 128);
-    const material = new THREE.MeshPhongMaterial({
-        map: moonTexture,
-        normalMap: moonNormal,
-        normalScale: new THREE.Vector2(1.4, 1.4),
+    const moonTexture = textureLoader.load('/static/textures/moon_1024.jpg');
+
+    const moon = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
+        color: 0x888888,
         shininess: 2,
-        specular: 0x111111,
-        flatShading: false
-    });
-    const moon = new THREE.Mesh(geometry, material);
+        specular: 0x222222
+    }));
     scene.add(moon);
+
+    moonTexture.onload = () => {
+        moon.material = new THREE.MeshPhongMaterial({
+            map: moonTexture,
+            bumpMap: moonTexture,      // brightness in the jpg creates realistic crater depth/3D
+            bumpScale: 0.035,
+            shininess: 4,
+            specular: 0x111111
+        });
+    };
+    moonTexture.onerror = () => {
+        console.warn('[LUNARA] No local moon_1024.jpg in static/textures/. Falling back to external (temporary).');
+        const fb = textureLoader.load('https://threejs.org/examples/textures/planets/moon_1024.jpg');
+        fb.onload = () => {
+            moon.material = new THREE.MeshPhongMaterial({ map: fb, bumpMap: fb, bumpScale: 0.03, shininess: 2 });
+        };
+    };
 
     // Realistic lighting: soft fill + strong directional "sun"
     const hemiLight = new THREE.HemisphereLight(0x555577, 0x222233, 0.5);
@@ -479,8 +461,8 @@ function initThreeMoon(containerId = 'hero-moon') {
 
     camera.position.z = 4.2;
 
-    // Starfield (procedural points for deep space feel)
-    const starCount = 2500;
+    // Starfield (procedural points for deep space feel) - reduced for perf
+    const starCount = 400;
     const starPositions = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
         const radius = 25 + Math.random() * 15;
@@ -505,12 +487,13 @@ function initThreeMoon(containerId = 'hero-moon') {
     // Interaction: drag to rotate the moon
     let isDragging = false;
     let previousX = 0;
-    let rotationSpeed = 0.0008; // base auto-rotate
+    let rotationSpeed = 0.0006; // slightly slower for perf
 
     const onPointerDown = (event) => {
         isDragging = true;
         previousX = event.clientX || (event.touches && event.touches[0].clientX) || 0;
         rotationSpeed = 0; // pause auto on drag
+        needsRender = true;
     };
 
     const onPointerMove = (event) => {
@@ -519,11 +502,13 @@ function initThreeMoon(containerId = 'hero-moon') {
         const delta = clientX - previousX;
         moon.rotation.y += delta * 0.004;
         previousX = clientX;
+        needsRender = true;
     };
 
     const onPointerUp = () => {
         isDragging = false;
-        rotationSpeed = 0.0008; // resume gentle auto-rotate
+        rotationSpeed = 0.0006; // resume gentle auto-rotate
+        needsRender = true;
     };
 
     const dom = renderer.domElement;
@@ -538,13 +523,75 @@ function initThreeMoon(containerId = 'hero-moon') {
     dom.addEventListener('touchend', onPointerUp);
 
     // Gentle auto rotation + stars slow drift
+    let animationFrameId = null;
+    let lastTime = performance.now();
+    let needsRender = true;
+    let frame = 0;
+
     function animate() {
-        requestAnimationFrame(animate);
-        moon.rotation.y += rotationSpeed;
-        stars.rotation.y += rotationSpeed * 0.2; // subtle star movement
-        renderer.render(scene, camera);
+        animationFrameId = requestAnimationFrame(animate);
+
+        // Skip heavy work if tab hidden or not visible (fixes long RAF violations)
+        if (document.hidden) return;
+
+        const now = performance.now();
+        const delta = Math.min((now - lastTime) / 16.666, 3); // normalize + clamp
+        lastTime = now;
+
+        if (rotationSpeed !== 0 || isDragging) {
+            moon.rotation.y += rotationSpeed * delta;
+            stars.rotation.y += rotationSpeed * 0.2 * delta;
+            needsRender = true;
+        }
+
+        frame = (frame + 1) % 2;
+
+        // During pure auto-rotate, throttle render to every other frame (~30fps) to reduce violations
+        // Full rate only when interacting or needsRender
+        if (needsRender || isDragging || frame === 0) {
+            renderer.render(scene, camera);
+            needsRender = false;
+        }
     }
-    animate();
+
+    function startAnimation() {
+        if (!animationFrameId) {
+            needsRender = true;
+            animate();
+        }
+    }
+
+    function stopAnimation() {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+    }
+
+    // Pause when tab is hidden or page not visible - critical for perf
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopAnimation();
+        } else {
+            startAnimation();
+        }
+    });
+
+    // Use IntersectionObserver to only animate when hero is in view
+    const moonObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                startAnimation();
+            } else {
+                stopAnimation();
+            }
+        });
+    }, { threshold: 0.1 });
+
+    moonObserver.observe(container);
+
+    // Start initially
+    startAnimation();
 
     // Responsive
     window.addEventListener('resize', () => {
@@ -556,6 +603,7 @@ function initThreeMoon(containerId = 'hero-moon') {
     // Optional: subtle auto-tilt on load
     setTimeout(() => {
         moon.rotation.x = 0.15;
+        needsRender = true;
     }, 800);
 }
 
@@ -593,15 +641,48 @@ async function initApp() {
 
     renderPortfolio();
 
-    // Initial 3D moon
-    initThreeMoon('hero-moon');
+    // Initial 3D moon (wrapped to prevent any texture load error from breaking other features like Grok)
+    try {
+      initThreeMoon('hero-moon');
+    } catch (e) {
+      console.error('3D moon init failed (non-fatal):', e);
+    }
 
-    // Auto refresh
+    // ============ LONG STREAM / SSE INTEGRATION ============
+    // Live market data updates via Server-Sent Events (long-lived stream)
+    try {
+        const marketStream = new EventSource('/api/market/stream');
+        marketStream.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.stocks && data.stocks.length > 0) {
+                    stocksData = data.stocks;
+                    renderMarket();
+                }
+                if (data.cryptos && data.cryptos.length > 0) {
+                    cryptoData = data.cryptos;
+                    renderCryptoMarket();
+                }
+                updatePortfolioValue();
+            } catch (parseErr) {
+                console.warn('Stream parse error', parseErr);
+            }
+        };
+        marketStream.onerror = (err) => {
+            console.warn('Market SSE stream error (falling back to polling)', err);
+            // Polling will continue as backup
+        };
+        console.log('%c[LUNARA] Long-lived market data stream connected (SSE).', 'color:#34d399');
+    } catch (e) {
+        console.warn('EventSource not available or failed, using polling fallback only.');
+    }
+
+    // Fallback polling (in case SSE fails or for news)
     setInterval(fetchStocks, 45000);
-    setInterval(fetchCrypto, 60000);  // crypto a bit slower
+    setInterval(fetchCrypto, 60000);
     setInterval(fetchNews, 5 * 60 * 1000);
 
-    console.log('%c[LUNARA] Educational cislunar simulator initialized with real aerospace data.', 'color:#64748b');
+    console.log('%c[LUNARA] Educational cislunar simulator initialized with real aerospace data + live stream.', 'color:#64748b');
 }
 
 // ===================== GROK ORBITAL INVESTMENT AGENT =====================
@@ -667,8 +748,8 @@ async function sendGrokMessage() {
     };
 
     const marketSnapshot = {
-        stocks: (stocksData || []).slice(0, 6),
-        cryptos: (cryptoData || []).slice(0, 4)
+        stocks: stocksData || [],
+        cryptos: cryptoData || []
     };
 
     try {

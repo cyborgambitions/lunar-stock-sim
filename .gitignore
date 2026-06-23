@@ -15,3 +15,7 @@ __pycache__/
 
 # Misc
 *.log
+
+# Tailwind standalone CLI (large binary - download when needed)
+tailwindcss
+tailwindcss.exe
