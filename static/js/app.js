@@ -445,7 +445,7 @@ function initThreeMoon(containerId = 'hero-moon') {
     // Real moon textures - LOCAL FIRST (recommended)
     // moon_1024.jpg must be in static/textures/  (provides color + bump for craters)
     // (Optional: drop a real moon_1024_normal.jpg for extra detail)
-    const geometry = new THREE.SphereGeometry(1.9, 64, 64);
+    const geometry = new THREE.SphereGeometry(1.9, 128, 128);  // higher res for smooth 3D
     const textureLoader = new THREE.TextureLoader();
 
     const moonTexture = textureLoader.load('/static/textures/moon_1024.jpg');
@@ -461,16 +461,21 @@ function initThreeMoon(containerId = 'hero-moon') {
         moon.material = new THREE.MeshPhongMaterial({
             map: moonTexture,
             bumpMap: moonTexture,      // brightness in the jpg creates realistic crater depth/3D
-            bumpScale: 0.012,          // lowered to stop "butchered" look
-            shininess: 3,
+            bumpScale: 0.005,          // very subtle for beautiful non-butchered look
+            shininess: 4,
             specular: 0x111111
         });
+        // Sharper texture
+        moonTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        needsRender = true;
     };
     moonTexture.onerror = () => {
         console.warn('[LUNARA] No local moon_1024.jpg in static/textures/. Falling back to external (temporary).');
         const fb = textureLoader.load('https://threejs.org/examples/textures/planets/moon_1024.jpg');
         fb.onload = () => {
-            moon.material = new THREE.MeshPhongMaterial({ map: fb, bumpMap: fb, bumpScale: 0.012, shininess: 2 });
+            moon.material = new THREE.MeshPhongMaterial({ map: fb, bumpMap: fb, bumpScale: 0.005, shininess: 2 });
+            fb.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            needsRender = true;
         };
     };
 
@@ -486,6 +491,10 @@ function initThreeMoon(containerId = 'hero-moon') {
     const rimLight = new THREE.DirectionalLight(0xaaaaff, 0.3);
     rimLight.position.set(-4, -2, -3);
     scene.add(rimLight);
+
+    // Soft ambient for overall beauty
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+    scene.add(ambientLight);
 
     camera.position.z = 4.2;
 
@@ -516,6 +525,7 @@ function initThreeMoon(containerId = 'hero-moon') {
     let isDragging = false;
     let previousX = 0;
     let rotationSpeed = 0.0006; // slightly slower for perf
+    let needsRender = true;  // declare early to fix scope
 
     const onPointerDown = (event) => {
         isDragging = true;
@@ -553,7 +563,6 @@ function initThreeMoon(containerId = 'hero-moon') {
     // Gentle auto rotation + stars slow drift
     let animationFrameId = null;
     let lastTime = performance.now();
-    let needsRender = true;
     let frame = 0;
 
     function animate() {
