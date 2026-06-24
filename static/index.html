@@ -388,8 +388,8 @@
                     </h4>
                     <form id="feedback-form" action="https://formspree.io/f/mpqekzpz" method="POST" accept-charset="UTF-8" class="space-y-3">
                         <input type="hidden" name="_subject" value="LUNARA Feedback">
-                        <input type="email" name="email" placeholder="Your email (optional)" class="w-full bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm">
-                        <textarea name="message" rows="3" required placeholder="What do you like? What should we add or fix? Ideas for new cislunar assets?" class="w-full bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm"></textarea>
+                        <input type="email" name="email" autocomplete="email" placeholder="Your email (optional)" class="w-full bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm">
+                        <textarea name="message" rows="3" required autocomplete="off" placeholder="What do you like? What should we add or fix? Ideas for new cislunar assets?" class="w-full bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm"></textarea>
                         <button type="submit" class="w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-sm font-medium transition-colors">
                             Send Feedback
                         </button>
@@ -532,7 +532,7 @@
                 </div>
 
                 <div class="flex gap-2">
-                    <input id="grok-input" type="text" class="flex-1 bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm focus:outline-none focus:border-cyan-400" placeholder="Ask Grok anything about your cislunar portfolio...">
+                    <input id="grok-input" type="text" autocomplete="off" class="flex-1 bg-white/5 border border-white/20 rounded-2xl px-4 py-2 text-sm focus:outline-none focus:border-cyan-400" placeholder="Ask Grok anything about your cislunar portfolio...">
                     <button onclick="sendGrokMessage()" class="px-6 rounded-2xl bg-cyan-400 text-black font-semibold">Send</button>
                 </div>
                 <div class="text-[10px] text-white/40 mt-2 text-center">Grok has full context of your live portfolio, holdings, and current market data.</div>

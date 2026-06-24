@@ -89,7 +89,7 @@ function renderMarket() {
             </td>
             <td class="py-4 px-6">
                 <div class="flex items-center gap-2 justify-end">
-                    <input type="number" id="qty-s-${stock.ticker}" value="10" min="1" step="1" 
+                    <input type="number" id="qty-s-${stock.ticker}" name="qty-s-${stock.ticker}" autocomplete="off" value="10" min="1" step="1" 
                            class="w-16 bg-white/5 border border-white/20 rounded px-2 py-1 text-sm text-right">
                     <button onclick="buyStockFromInput('${stock.ticker}')" 
                             class="px-4 py-1 text-xs bg-emerald-500/80 hover:bg-emerald-400 text-black rounded-2xl transition-colors font-medium">
@@ -128,7 +128,7 @@ function renderCryptoMarket() {
             </td>
             <td class="py-4 px-6">
                 <div class="flex items-center gap-2 justify-end">
-                    <input type="number" id="qty-c-${coin.ticker}" value="0.1" min="0.001" step="0.001" 
+                    <input type="number" id="qty-c-${coin.ticker}" name="qty-c-${coin.ticker}" autocomplete="off" value="0.1" min="0.001" step="0.001" 
                            class="w-20 bg-white/5 border border-white/20 rounded px-2 py-1 text-sm text-right">
                     <button onclick="buyCryptoFromInput('${coin.ticker}')" 
                             class="px-4 py-1 text-xs bg-emerald-500/80 hover:bg-emerald-400 text-black rounded-2xl transition-colors font-medium">
@@ -458,8 +458,8 @@ function initThreeMoon(containerId = 'hero-moon') {
         moon.material = new THREE.MeshPhongMaterial({
             map: moonTexture,
             bumpMap: moonTexture,      // brightness in the jpg creates realistic crater depth/3D
-            bumpScale: 0.035,
-            shininess: 4,
+            bumpScale: 0.012,          // lowered to stop "butchered" look
+            shininess: 3,
             specular: 0x111111
         });
     };
@@ -467,7 +467,7 @@ function initThreeMoon(containerId = 'hero-moon') {
         console.warn('[LUNARA] No local moon_1024.jpg in static/textures/. Falling back to external (temporary).');
         const fb = textureLoader.load('https://threejs.org/examples/textures/planets/moon_1024.jpg');
         fb.onload = () => {
-            moon.material = new THREE.MeshPhongMaterial({ map: fb, bumpMap: fb, bumpScale: 0.03, shininess: 2 });
+            moon.material = new THREE.MeshPhongMaterial({ map: fb, bumpMap: fb, bumpScale: 0.012, shininess: 2 });
         };
     };
 
