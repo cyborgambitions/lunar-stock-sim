@@ -349,8 +349,6 @@ async function updateProjections() {
     `;
 
     container.innerHTML = html;
-        }
-    });
 }
 
 function renderNews() {
@@ -635,15 +633,21 @@ async function refreshStocks() {
     await fetchStocks();
 }
 
+async function refreshCrypto() {
+    // Manual refresh helper (still useful for one-off updates).
+    // Live data is primarily delivered via SSE long stream.
+    await fetchCrypto();
+}
+
 async function initApp() {
     initPortfolio();
 
-    // Start the long-lived SSE stream first so we get market data via the stream
-    // (the backend now pushes an immediate snapshot on connect).
-    setupMarketStream();
-
-    // Initial data load - news is relatively static (slow changing).
-    await fetchNews();
+    // Initial data load - get everything fast so UI shows data immediately
+    await Promise.all([
+        fetchStocks(),
+        fetchCrypto(),
+        fetchNews()
+    ]);
 
     renderPortfolio();
 
@@ -654,7 +658,8 @@ async function initApp() {
       console.error('3D moon init failed (non-fatal):', e);
     }
 
-    // Start long-lived SSE stream early (it sends immediate snapshot)
+    // Start the SSE long-lived stream for live updates (no more polling for market)
+    // Backend sends snapshot immediately on connect + regular updates
     setupMarketStream();
 
     // News is slower-changing → light polling is acceptable
@@ -838,7 +843,7 @@ function addSuggestionButtonsIfAny(responseText, chatContainer) {
 window.buyStock = buyStock;
 window.advanceTime = advanceTime;
 window.refreshStocks = refreshStocks;
-window.refreshCrypto = fetchCrypto;
+window.refreshCrypto = refreshCrypto;
 window.buyCryptoFromInput = buyCryptoFromInput;
 window.showGrokAgentModal = showGrokAgentModal;
 
@@ -851,5 +856,31 @@ window.showProjections = () => {
     if (el) el.scrollIntoView({ behavior: 'smooth' });
 };
 
-// Start everything
-document.addEventListener('DOMContentLoaded', initApp);
+// App Initialization - using window.onload as requested
+window.onload = async () => {
+    initPortfolio();
+
+    // Initial data so UI shows immediately
+    await Promise.all([
+        fetchStocks(),
+        fetchCrypto(),
+        fetchNews()
+    ]);
+
+    renderPortfolio();
+
+    // 3D moon
+    try {
+        initThreeMoon('hero-moon');
+    } catch (e) {
+        console.error('3D moon init failed (non-fatal):', e);
+    }
+
+    // Live SSE stream for updates
+    setupMarketStream();
+
+    // light news poll
+    setInterval(fetchNews, 5 * 60 * 1000);
+
+    console.log('%c[LUNARA] Initialized with SSE long stream for market data.', 'color:#64748b');
+};
