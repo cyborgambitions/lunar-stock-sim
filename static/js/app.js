@@ -261,8 +261,12 @@ function renderPortfolio() {
         });
     }
 
-    // Update total
-    document.getElementById('portfolio-value').textContent = formatMoney(totalValue);
+    // Update total displays
+    const cashEl = document.getElementById('portfolio-cash');
+    if (cashEl) cashEl.innerText = formatMoney(portfolio.cash);
+    
+    const totalEl = document.getElementById('portfolio-total');
+    if (totalEl) totalEl.innerText = formatMoney(totalValue);
 
     // Update projections
     updateProjections();
@@ -271,6 +275,25 @@ function renderPortfolio() {
 function updatePortfolioValue() {
     // This is called when stocks update to refresh values
     renderPortfolio();
+}
+
+function loadPortfolio() {
+    const saved = localStorage.getItem('lunara_portfolio');
+    if (saved) {
+        portfolio = JSON.parse(saved);
+    }
+}
+
+function startLiveStream() {
+    const evtSource = new EventSource("/api/market/stream");
+    evtSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.stocks) stocksData = data.stocks;
+        if (data.cryptos) cryptoData = data.cryptos;
+        renderMarket();
+        renderCryptoMarket();
+        renderPortfolio();
+    };
 }
 
 async function updateProjections() {
@@ -856,31 +879,18 @@ window.showProjections = () => {
     if (el) el.scrollIntoView({ behavior: 'smooth' });
 };
 
-// App Initialization - using window.onload as requested
+// App Initialization
 window.onload = async () => {
-    initPortfolio();
-
-    // Initial data so UI shows immediately
-    await Promise.all([
-        fetchStocks(),
-        fetchCrypto(),
-        fetchNews()
-    ]);
-
+    loadPortfolio();
+    await Promise.all([fetchStocks(), fetchCrypto(), fetchNews()]);
     renderPortfolio();
 
     // 3D moon
     try {
-        initThreeMoon('hero-moon');
+      initThreeMoon('hero-moon');
     } catch (e) {
-        console.error('3D moon init failed (non-fatal):', e);
+      console.error('3D moon init failed (non-fatal):', e);
     }
 
-    // Live SSE stream for updates
-    setupMarketStream();
-
-    // light news poll
-    setInterval(fetchNews, 5 * 60 * 1000);
-
-    console.log('%c[LUNARA] Initialized with SSE long stream for market data.', 'color:#64748b');
+    startLiveStream();
 };

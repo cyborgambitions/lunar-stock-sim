@@ -71,3 +71,6 @@ Write-Host "  grok -Terminal       # terminal mode" -ForegroundColor White
 Write-Host ""
 Write-Host "Remember to set the key first: " -NoNewline -ForegroundColor Yellow
 Write-Host '$env:XAI_API_KEY = "xai-..."' -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Debug helper:   python debug_agent.py" -ForegroundColor DarkGray
+Write-Host "  Commands: env | start | kill | port | sse | texture | git | push | grok | quick | diag" -ForegroundColor DarkGray
