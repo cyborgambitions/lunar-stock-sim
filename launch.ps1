@@ -10,15 +10,28 @@
 # IMPORTANT: NEVER put your real XAI API key in this file!
 # GitHub will block the push (Push Protection) and it's a security risk.
 #
-# How to use:
-#   1. Set your key in the current terminal session first:
-#        $env:XAI_API_KEY = "xai-your-real-key-here"
+# Recommended for persistence:
+#   Create a .env file in this folder (it is gitignored):
+#     XAI_API_KEY=xai-your-real-key-here
 #
-#   2. Then run one of:
-#        . .\launch.ps1
-#        grok
+#   The helper will load it automatically if $env:XAI_API_KEY is not already set.
 #
-# This file is safe to commit.
+# Alternative:
+#   $env:XAI_API_KEY = "xai-..."
+#
+# Then: . .\launch.ps1 ; grok
+
+# Auto-load XAI_API_KEY from .env if present and not already in env
+if (-not $env:XAI_API_KEY) {
+    $envFile = Join-Path $PSScriptRoot ".env"
+    if (Test-Path $envFile) {
+        Get-Content $envFile | ForEach-Object {
+            if ($_ -match '^\s*XAI_API_KEY\s*=\s*(.+)\s*$') {
+                $env:XAI_API_KEY = $matches[1].Trim('"').Trim("'")
+            }
+        }
+    }
+}
 
 function grok {
     [CmdletBinding()]
@@ -28,11 +41,13 @@ function grok {
     )
 
     if (-not $env:XAI_API_KEY -or $env:XAI_API_KEY -like "*PLACEHOLDER*") {
-        Write-Host "ERROR: XAI_API_KEY not set in this session." -ForegroundColor Red
-        Write-Host "Run this first (replace with your real key):" -ForegroundColor Yellow
-        Write-Host '  $env:XAI_API_KEY = "xai-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"' -ForegroundColor Cyan
+        Write-Host "ERROR: XAI_API_KEY not set." -ForegroundColor Red
+        Write-Host "Options:" -ForegroundColor Yellow
+        Write-Host "  1. Create .env in this folder with: XAI_API_KEY=xai-..." -ForegroundColor Cyan
+        Write-Host "  2. Or set in this session: " -NoNewline -ForegroundColor Cyan
+        Write-Host '$env:XAI_API_KEY = "xai-..."' -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "For Render: make sure XAI_API_KEY is set in the dashboard Environment variables." -ForegroundColor DarkGray
+        Write-Host "For Render: Set XAI_API_KEY in the Render dashboard (Environment variables)." -ForegroundColor DarkGray
         return
     }
 

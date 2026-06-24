@@ -9,6 +9,10 @@ import asyncio
 import httpx
 import feedparser
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+
+load_dotenv()  # Load XAI_API_KEY etc from .env if present (local dev)
+
 # yfinance removed from price fetching to avoid GraphQL validation errors from Yahoo
 # (see _fetch_one_yahoo_price)
 

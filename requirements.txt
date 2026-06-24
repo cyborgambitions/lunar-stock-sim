@@ -3,6 +3,7 @@ uvicorn
 httpx
 python-multipart
 pydantic
+python-dotenv
 yfinance
 feedparser
 beautifulsoup4
