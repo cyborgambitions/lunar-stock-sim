@@ -327,6 +327,9 @@ async function updateProjections() {
             body: JSON.stringify({ current_value: currentValue, years: 10 })
         });
         projectionsData = await resp.json();
+        if (!resp.ok || projectionsData.error) {
+            throw new Error(projectionsData.error || 'Backend error');
+        }
     } catch (e) {
         // fallback client calc if backend fails
         projectionsData = {

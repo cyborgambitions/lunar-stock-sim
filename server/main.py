@@ -1,5 +1,5 @@
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi import FastAPI, Body
+from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse
 import json
 from fastapi.staticfiles import StaticFiles
 import os
@@ -346,22 +346,26 @@ async def api_news():
 
 # Educational projections - server side for reliability
 @app.post("/api/projections")
-async def api_projections(data: dict):
-    years = max(1, min(30, int(data.get("years", 10))))
-    current_value = float(data.get("current_value", 2500.0))
-    # Conservative space/cislunar long-term rates (educational)
-    opt = round(current_value * (1.18 ** years))
-    base = round(current_value * (1.10 ** years))
-    pess = round(current_value * (1.02 ** years))
-    return {
-        "starting": 2500.0,
-        "current_value": round(current_value, 2),
-        "years": years,
-        "optimistic": opt,
-        "base": base,
-        "pessimistic": pess,
-        "note": "Educational only. Space sector is volatile. Not financial advice."
-    }
+async def api_projections(data: dict = Body(...)):
+    try:
+        years = max(1, min(30, int(data.get("years", 10))))
+        current_value = float(data.get("current_value", 2500.0))
+        # Conservative space/cislunar long-term rates (educational)
+        opt = round(current_value * (1.18 ** years))
+        base = round(current_value * (1.10 ** years))
+        pess = round(current_value * (1.02 ** years))
+        return {
+            "starting": 2500.0,
+            "current_value": round(current_value, 2),
+            "years": years,
+            "optimistic": opt,
+            "base": base,
+            "pessimistic": pess,
+            "note": "Educational only. Space sector is volatile. Not financial advice."
+        }
+    except Exception as error:
+        print(f"[LUNARA] Projection Error: {error} | input={data}")
+        return JSONResponse(status_code=400, content={"error": "Invalid projection request", "details": str(error)})
 
 
 # ===================== REBALANCE SIMULATION LOGIC =====================
