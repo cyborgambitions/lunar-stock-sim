@@ -13,6 +13,13 @@ from dotenv import load_dotenv
 
 load_dotenv()  # Load XAI_API_KEY etc from .env if present (local dev)
 
+# Startup validation for critical env vars
+xai_key = os.getenv("XAI_API_KEY") or os.getenv("LUNARA_XAI_KEY")
+if xai_key:
+    print("✓ XAI_API_KEY loaded for Grok Orbital Agent")
+else:
+    print("⚠️  XAI_API_KEY not set - Orbital Agent will be offline. Set it in .env (local) or Render dashboard.")
+
 # yfinance removed from price fetching to avoid GraphQL validation errors from Yahoo
 # (see _fetch_one_yahoo_price)
 
@@ -23,6 +30,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Mount static frontend
 static_dir = os.path.join(PROJECT_ROOT, "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/health")
+async def health_check():
+    """Simple health check for Render to ensure service is ready."""
+    return {"status": "healthy", "service": "LUNARA", "time": datetime.utcnow().isoformat() + "Z"}
 
 # Hard-coded Grok logo favicon (inline SVG - no external file or 404s)
 @app.get("/favicon.ico", include_in_schema=False)
