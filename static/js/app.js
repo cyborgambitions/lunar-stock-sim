@@ -9,6 +9,7 @@ let portfolio = {
 let stocksData = [];
 let cryptoData = [];
 let newsData = [];
+let launchesData = [];
 
 function formatMoney(amount) {
     return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 0 });
@@ -397,6 +398,47 @@ function renderNews() {
     });
 }
 
+function renderLaunches() {
+    const container = document.getElementById('launches-feed');
+    if (!container || !launchesData.length) return;
+
+    container.innerHTML = '';
+
+    launchesData.forEach(launch => {
+        const div = document.createElement('div');
+        div.className = 'px-3 py-1 bg-white/5 rounded-lg flex items-start gap-x-2 text-[10px]';
+        const netDate = launch.net ? new Date(launch.net).toLocaleDateString() + ' ' + new Date(launch.net).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'TBD';
+        div.innerHTML = `
+            <div class="flex-1">
+                <div class="font-medium">${launch.name}</div>
+                <div class="text-white/50">${launch.provider} • ${launch.rocket}</div>
+            </div>
+            <div class="text-right text-emerald-400 whitespace-nowrap">
+                ${netDate}<br>
+                <span class="text-[8px] text-white/40">${launch.status}</span>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+async function fetchLaunches() {
+    try {
+        const res = await fetch('/api/launches?t=' + Date.now());
+        const data = await res.json();
+        launchesData = data.launches || [];
+        renderLaunches();
+    } catch (e) {
+        console.error('Failed to fetch launches', e);
+        // Fallback sample
+        launchesData = [
+            { name: "SpaceX Starlink 6-1", net: new Date(Date.now() + 86400000).toISOString(), provider: "SpaceX", rocket: "Falcon 9", status: "Go" },
+            { name: "Rocket Lab Electron", net: new Date(Date.now() + 172800000).toISOString(), provider: "Rocket Lab", rocket: "Electron", status: "Go" }
+        ];
+        renderLaunches();
+    }
+}
+
 async function advanceTime() {
     if (Object.keys(portfolio.holdings).length === 0) {
         alert("Buy some stocks first to see the effect of time!");
@@ -444,37 +486,45 @@ function initThreeMoon(containerId = 'hero-moon') {
 
     // Real moon textures - LOCAL FIRST (recommended)
     // moon_1024.jpg must be in static/textures/  (provides color + bump for craters)
-    // (Optional: drop a real moon_1024_normal.jpg for extra detail)
-    const geometry = new THREE.SphereGeometry(1.9, 128, 128);  // higher res for smooth 3D
+    const geometry = new THREE.SphereGeometry(1.9, 128, 128);
     const textureLoader = new THREE.TextureLoader();
 
     const moonTexture = textureLoader.load('/static/textures/moon_1024.jpg');
 
-    const moon = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
+    const moonMaterial = new THREE.MeshPhongMaterial({
         color: 0x888888,
         shininess: 2,
         specular: 0x222222
-    }));
+    });
+    const moon = new THREE.Mesh(geometry, moonMaterial);
     scene.add(moon);
 
     moonTexture.onload = () => {
-        moon.material = new THREE.MeshPhongMaterial({
-            map: moonTexture,
-            bumpMap: moonTexture,      // brightness in the jpg creates realistic crater depth/3D
-            bumpScale: 0.005,          // very subtle for beautiful non-butchered look
-            shininess: 4,
-            specular: 0x111111
-        });
+        moonMaterial.map = moonTexture;
+        moonMaterial.bumpMap = moonTexture;
+        moonMaterial.bumpScale = 0.035;  // nice 3D craters without butchering
+        moonMaterial.shininess = 5;
+        moonMaterial.specular = new THREE.Color(0x222222);
+        moonMaterial.needsUpdate = true;
         // Sharper texture
-        moonTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        if (renderer.capabilities) {
+            moonTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        }
         needsRender = true;
     };
     moonTexture.onerror = () => {
-        console.warn('[LUNARA] No local moon_1024.jpg in static/textures/. Falling back to external (temporary).');
+        console.warn('[LUNARA] No local moon_1024.jpg in static/textures/. Falling back to external.');
         const fb = textureLoader.load('https://threejs.org/examples/textures/planets/moon_1024.jpg');
         fb.onload = () => {
-            moon.material = new THREE.MeshPhongMaterial({ map: fb, bumpMap: fb, bumpScale: 0.005, shininess: 2 });
-            fb.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            moonMaterial.map = fb;
+            moonMaterial.bumpMap = fb;
+            moonMaterial.bumpScale = 0.035;
+            moonMaterial.shininess = 5;
+            moonMaterial.specular = new THREE.Color(0x222222);
+            moonMaterial.needsUpdate = true;
+            if (renderer.capabilities) {
+                fb.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            }
             needsRender = true;
         };
     };
@@ -525,7 +575,7 @@ function initThreeMoon(containerId = 'hero-moon') {
     let isDragging = false;
     let previousX = 0;
     let rotationSpeed = 0.0006; // slightly slower for perf
-    let needsRender = true;  // declare early to fix scope
+    let needsRender = true;
 
     const onPointerDown = (event) => {
         isDragging = true;
@@ -681,7 +731,8 @@ async function initApp() {
     await Promise.all([
         fetchStocks(),
         fetchCrypto(),
-        fetchNews()
+        fetchNews(),
+        fetchLaunches()
     ]);
 
     renderPortfolio();
