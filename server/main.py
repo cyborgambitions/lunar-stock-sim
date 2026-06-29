@@ -281,6 +281,11 @@ live_market = {
     "updated": ""
 }
 
+launches_cache = {
+    "launches": [],
+    "updated": ""
+}
+
 async def _refresh_live_market():
     """Background refresher to keep data hot for all streaming clients."""
     while True:
@@ -292,10 +297,40 @@ async def _refresh_live_market():
             print(f"[LUNARA] Live market refresh error: {e}")
         await asyncio.sleep(15)  # refresh every 15s (Yahoo friendly)
 
+async def _refresh_launches():
+    """Background refresher for real-time upcoming rocket launches."""
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    "https://ll.thespacedevs.com/2.2.0/launch/upcoming/",
+                    params={"limit": 5, "format": "json"}
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    launches = []
+                    for item in data.get("results", []):
+                        launches.append({
+                            "name": item.get("name", "TBD Launch"),
+                            "net": item.get("net", ""),
+                            "status": item.get("status", {}).get("name", "Unknown"),
+                            "provider": item.get("launch_service_provider", {}).get("name", ""),
+                            "rocket": item.get("rocket", {}).get("configuration", {}).get("name", ""),
+                            "mission": (item.get("mission") or {}).get("name", ""),
+                            "pad": item.get("pad", {}).get("name", "")
+                        })
+                    launches_cache["launches"] = launches[:5]
+                    launches_cache["updated"] = datetime.utcnow().isoformat() + "Z"
+        except Exception as e:
+            print(f"[LUNARA] Launches refresh error: {e}")
+        await asyncio.sleep(300)  # refresh every 5 minutes
+
 @app.on_event("startup")
 async def _start_market_refresher():
     asyncio.create_task(_refresh_live_market())
+    asyncio.create_task(_refresh_launches())
     print("[LUNARA] Long-lived market data stream refresher started.")
+    print("[LUNARA] Rocket launch schedule refresher started.")
 
 # Combined SSE stream for live market updates (stocks + crypto)
 @app.get("/api/market/stream")
@@ -307,6 +342,7 @@ async def stream_market():
             initial = {
                 "stocks": live_market["stocks"] or [],
                 "cryptos": live_market["cryptos"] or [],
+                "launches": launches_cache.get("launches", []),
                 "updated": live_market["updated"] or datetime.utcnow().isoformat() + "Z"
             }
             yield f"data: {json.dumps(initial)}\n\n"
@@ -318,6 +354,7 @@ async def stream_market():
                 data = {
                     "stocks": live_market["stocks"] or [],
                     "cryptos": live_market["cryptos"] or [],
+                    "launches": launches_cache.get("launches", []),
                     "updated": live_market["updated"] or datetime.utcnow().isoformat() + "Z"
                 }
                 yield f"data: {json.dumps(data)}\n\n"
@@ -359,6 +396,16 @@ async def api_news():
     unique = [x for x in items if not (x["link"] in seen or seen.add(x["link"]))]
     news_cache = {"news": unique[:8], "updated": now.isoformat() + "Z"}
     return news_cache
+
+@app.get("/api/launches")
+async def api_launches():
+    """Real-time upcoming rocket launch schedule."""
+    if launches_cache.get("launches"):
+        return {
+            "launches": launches_cache["launches"],
+            "updated": launches_cache.get("updated", "")
+        }
+    return {"launches": [], "updated": ""}
 
 # Educational projections - server side for reliability
 @app.post("/api/projections")
