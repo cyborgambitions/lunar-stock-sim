@@ -503,9 +503,9 @@ function initThreeMoon(containerId = 'hero-moon') {
     const moonTexture = textureLoader.load('/static/textures/moon_1024.jpg');
 
     const moonMaterial = new THREE.MeshPhongMaterial({
-        color: 0x9a9a9a,
-        shininess: 4,
-        specular: new THREE.Color(0x1f1f1f)
+        color: 0xffffff,  // let the real NASA texture provide the gray tones + maria
+        shininess: 3,
+        specular: new THREE.Color(0x111111)
     });
     const moon = new THREE.Mesh(geometry, moonMaterial);
     scene.add(moon);
@@ -520,9 +520,9 @@ function initThreeMoon(containerId = 'hero-moon') {
         }
         moonMaterial.map = tex;
         moonMaterial.bumpMap = tex;
-        moonMaterial.bumpScale = 0.038;
-        moonMaterial.shininess = 5;
-        moonMaterial.specular = new THREE.Color(0x1f1f1f);
+        moonMaterial.bumpScale = 0.095;  // stronger craters so it actually looks like Luna, not a smooth ball
+        moonMaterial.shininess = 3;
+        moonMaterial.specular = new THREE.Color(0x111111);
         moonMaterial.needsUpdate = true;
         needsRender = true;
     }
@@ -564,11 +564,11 @@ function initThreeMoon(containerId = 'hero-moon') {
     // Slightly elevated camera for pleasing lunar perspective
     camera.position.set(0.15, 0.55, 4.25);
 
-    // Rich starfield: deep space with depth via size + count
-    const starCount = 720;
+    // Rich starfield: deep space with dense stars in the background (real Luna night sky vibe)
+    const starCount = 1600;
     const starPositions = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
-        const radius = 26 + Math.random() * 18;
+        const radius = 28 + Math.random() * 22;  // push stars further back for background depth
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
         starPositions[i]     = radius * Math.sin(phi) * Math.cos(theta);
@@ -579,19 +579,19 @@ function initThreeMoon(containerId = 'hero-moon') {
     starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
     const starMaterial = new THREE.PointsMaterial({
         color: 0xeeeeff,
-        size: 0.062,
+        size: 0.055,
         transparent: true,
-        opacity: 0.92,
+        opacity: 0.85,
         depthWrite: false
     });
     const stars = new THREE.Points(starGeometry, starMaterial);
     scene.add(stars);
 
     // Bright prominent stars for visual pop (different layer = apparent depth)
-    const brightCount = 32;
+    const brightCount = 65;
     const brightPositions = new Float32Array(brightCount * 3);
     for (let i = 0; i < brightCount * 3; i += 3) {
-        const radius = 19 + Math.random() * 9;
+        const radius = 22 + Math.random() * 12;
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1) * 0.92;
         brightPositions[i]     = radius * Math.sin(phi) * Math.cos(theta);
@@ -602,9 +602,9 @@ function initThreeMoon(containerId = 'hero-moon') {
     brightGeometry.setAttribute('position', new THREE.BufferAttribute(brightPositions, 3));
     const brightMaterial = new THREE.PointsMaterial({
         color: 0xffffff,
-        size: 0.165,
+        size: 0.18,
         transparent: true,
-        opacity: 0.95,
+        opacity: 0.98,
         depthWrite: false
     });
     const brightStars = new THREE.Points(brightGeometry, brightMaterial);
@@ -782,8 +782,9 @@ async function initApp() {
     // Backend sends snapshot immediately on connect + regular updates
     setupMarketStream();
 
-    // News is slower-changing → light polling is acceptable
+    // News and launches are slower-changing → light polling is acceptable
     setInterval(fetchNews, 5 * 60 * 1000);
+    setInterval(fetchLaunches, 5 * 60 * 1000);
 
     console.log('%c[LUNARA] Initialized with SSE long stream for market data + real aerospace/crypto feeds.', 'color:#64748b');
 }
@@ -976,18 +977,9 @@ window.showProjections = () => {
     if (el) el.scrollIntoView({ behavior: 'smooth' });
 };
 
-// App Initialization
-window.onload = async () => {
-    loadPortfolio();
-    await Promise.all([fetchStocks(), fetchCrypto(), fetchNews()]);
-    renderPortfolio();
-
-    // 3D moon
-    try {
-      initThreeMoon('hero-moon');
-    } catch (e) {
-      console.error('3D moon init failed (non-fatal):', e);
-    }
-
-    startLiveStream();
-};
+// App Initialization — single entry point (launches, SSE stream, moon, Grok)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+} else {
+    initApp();
+}

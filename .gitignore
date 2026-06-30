@@ -19,3 +19,5 @@ __pycache__/
 # Tailwind standalone CLI (large binary - download when needed)
 tailwindcss
 tailwindcss.exe
+package-lock.json
+requirements.lock
