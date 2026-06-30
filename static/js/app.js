@@ -478,88 +478,97 @@ async function advanceTime() {
     alert("1 year advanced! Prices have moved based on realistic volatility in the space sector.\n\nRemember: This is educational — real markets are much more complex.");
 }
 
-// Realistic 3D Moon using real NASA-derived texture (color + bump from jpg for craters)
+// High-fidelity realistic 3D Moon — NASA-derived albedo texture with crater relief.
+// Something Nancy Grace would be proud of: accurate terminator lighting, crisp regolith detail,
+// elegant slow rotation, rich starfield, and a distant Earth for true cislunar presence.
+// Fully local texture, performant, pause-aware, interactive.
 function initThreeMoon(containerId = 'hero-moon') {
     const container = document.getElementById(containerId);
     if (!container) return;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(58, container.clientWidth / container.clientHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    
+
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(1); // 1 for best perf, avoids high DPI cost
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+    renderer.setPixelRatio(pixelRatio);
     container.appendChild(renderer.domElement);
 
-    // Real moon textures - LOCAL FIRST (recommended)
-    // moon_1024.jpg must be in static/textures/  (provides color + bump for craters)
-    const geometry = new THREE.SphereGeometry(1.9, 128, 128);
+    // Real NASA-inspired moon texture (local first for zero 404s and reliability)
+    // 1024px albedo provides both color detail and bump source for craters
+    const geometry = new THREE.SphereGeometry(1.9, 64, 64);
     const textureLoader = new THREE.TextureLoader();
 
     const moonTexture = textureLoader.load('/static/textures/moon_1024.jpg');
 
     const moonMaterial = new THREE.MeshPhongMaterial({
-        color: 0x888888,
-        shininess: 2,
-        specular: 0x222222
+        color: 0x9a9a9a,
+        shininess: 4,
+        specular: new THREE.Color(0x1f1f1f)
     });
     const moon = new THREE.Mesh(geometry, moonMaterial);
     scene.add(moon);
 
-    moonTexture.onload = () => {
-        moonMaterial.map = moonTexture;
-        moonMaterial.bumpMap = moonTexture;
-        moonMaterial.bumpScale = 0.035;  // nice 3D craters without butchering
-        moonMaterial.shininess = 5;
-        moonMaterial.specular = new THREE.Color(0x222222);
-        moonMaterial.needsUpdate = true;
-        // Sharper texture
-        if (renderer.capabilities) {
-            moonTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    // Apply high-quality texture + bump for authentic crater relief
+    function applyMoonTexture(tex) {
+        tex.minFilter = THREE.LinearMipmapLinear;
+        tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = true;
+        if (renderer.capabilities && renderer.capabilities.getMaxAnisotropy) {
+            tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
         }
+        moonMaterial.map = tex;
+        moonMaterial.bumpMap = tex;
+        moonMaterial.bumpScale = 0.038;
+        moonMaterial.shininess = 5;
+        moonMaterial.specular = new THREE.Color(0x1f1f1f);
+        moonMaterial.needsUpdate = true;
         needsRender = true;
-    };
+    }
+
+    moonTexture.onload = () => applyMoonTexture(moonTexture);
     moonTexture.onerror = () => {
-        console.warn('[LUNARA] No local moon_1024.jpg in static/textures/. Falling back to external.');
+        console.warn('[LUNARA] Local moon texture unavailable, using reliable CDN fallback.');
         const fb = textureLoader.load('https://threejs.org/examples/textures/planets/moon_1024.jpg');
-        fb.onload = () => {
-            moonMaterial.map = fb;
-            moonMaterial.bumpMap = fb;
-            moonMaterial.bumpScale = 0.035;
-            moonMaterial.shininess = 5;
-            moonMaterial.specular = new THREE.Color(0x222222);
-            moonMaterial.needsUpdate = true;
-            if (renderer.capabilities) {
-                fb.anisotropy = renderer.capabilities.getMaxAnisotropy();
-            }
-            needsRender = true;
-        };
+        fb.onload = () => applyMoonTexture(fb);
     };
 
-    // Realistic lighting: soft fill + strong directional "sun"
-    const hemiLight = new THREE.HemisphereLight(0x555577, 0x222233, 0.5);
+    // Cislunar Earth (small, distant, low-poly) — gives orbital context without stealing focus
+    const earthGeometry = new THREE.SphereGeometry(0.26, 18, 18);
+    const earthMaterial = new THREE.MeshPhongMaterial({
+        color: 0x2a4a88,
+        shininess: 9,
+        specular: new THREE.Color(0x112244)
+    });
+    const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+    earth.position.set(3.55, 1.05, -7.4);
+    scene.add(earth);
+
+    // Beautiful, scientifically pleasing lighting: strong sun creating a clean terminator,
+    // soft hemi fill, cool rim to lift the limb against space.
+    const hemiLight = new THREE.HemisphereLight(0x4a4a66, 0x1a1a22, 0.42);
     scene.add(hemiLight);
 
-    const sunLight = new THREE.DirectionalLight(0xfff8e7, 1.15);
-    sunLight.position.set(5, 2, 6);
+    const sunLight = new THREE.DirectionalLight(0xfff5d9, 1.28);
+    sunLight.position.set(4.8, 2.6, 5.2);
     scene.add(sunLight);
 
-    // Subtle rim light
-    const rimLight = new THREE.DirectionalLight(0xaaaaff, 0.3);
-    rimLight.position.set(-4, -2, -3);
+    const rimLight = new THREE.DirectionalLight(0xbccce8, 0.32);
+    rimLight.position.set(-4.2, 0.8, -4.8);
     scene.add(rimLight);
 
-    // Soft ambient for overall beauty
-    const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+    const ambientLight = new THREE.AmbientLight(0x333333, 0.28);
     scene.add(ambientLight);
 
-    camera.position.z = 4.2;
+    // Slightly elevated camera for pleasing lunar perspective
+    camera.position.set(0.15, 0.55, 4.25);
 
-    // Starfield (procedural points for deep space feel) - reduced for perf
-    const starCount = 400;
+    // Rich starfield: deep space with depth via size + count
+    const starCount = 720;
     const starPositions = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
-        const radius = 25 + Math.random() * 15;
+        const radius = 26 + Math.random() * 18;
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
         starPositions[i]     = radius * Math.sin(phi) * Math.cos(theta);
@@ -570,24 +579,47 @@ function initThreeMoon(containerId = 'hero-moon') {
     starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
     const starMaterial = new THREE.PointsMaterial({
         color: 0xeeeeff,
-        size: 0.08,
+        size: 0.062,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.92,
         depthWrite: false
     });
     const stars = new THREE.Points(starGeometry, starMaterial);
     scene.add(stars);
 
-    // Interaction: drag to rotate the moon
+    // Bright prominent stars for visual pop (different layer = apparent depth)
+    const brightCount = 32;
+    const brightPositions = new Float32Array(brightCount * 3);
+    for (let i = 0; i < brightCount * 3; i += 3) {
+        const radius = 19 + Math.random() * 9;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1) * 0.92;
+        brightPositions[i]     = radius * Math.sin(phi) * Math.cos(theta);
+        brightPositions[i + 1] = radius * Math.sin(phi) * Math.sin(theta);
+        brightPositions[i + 2] = radius * Math.cos(phi);
+    }
+    const brightGeometry = new THREE.BufferGeometry();
+    brightGeometry.setAttribute('position', new THREE.BufferAttribute(brightPositions, 3));
+    const brightMaterial = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 0.165,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false
+    });
+    const brightStars = new THREE.Points(brightGeometry, brightMaterial);
+    scene.add(brightStars);
+
+    // Interaction: drag to rotate the moon (inertial resume)
     let isDragging = false;
     let previousX = 0;
-    let rotationSpeed = 0.0006; // slightly slower for perf
+    let rotationSpeed = 0.00028; // very slow, elegant, realistic
     let needsRender = true;
 
     const onPointerDown = (event) => {
         isDragging = true;
         previousX = event.clientX || (event.touches && event.touches[0].clientX) || 0;
-        rotationSpeed = 0; // pause auto on drag
+        rotationSpeed = 0;
         needsRender = true;
     };
 
@@ -595,14 +627,14 @@ function initThreeMoon(containerId = 'hero-moon') {
         if (!isDragging) return;
         const clientX = event.clientX || (event.touches && event.touches[0].clientX) || previousX;
         const delta = clientX - previousX;
-        moon.rotation.y += delta * 0.004;
+        moon.rotation.y += delta * 0.0042;
         previousX = clientX;
         needsRender = true;
     };
 
     const onPointerUp = () => {
         isDragging = false;
-        rotationSpeed = 0.0006; // resume gentle auto-rotate
+        rotationSpeed = 0.00028;
         needsRender = true;
     };
 
@@ -612,12 +644,11 @@ function initThreeMoon(containerId = 'hero-moon') {
     dom.addEventListener('mouseup', onPointerUp);
     dom.addEventListener('mouseleave', onPointerUp);
 
-    // Touch support
     dom.addEventListener('touchstart', onPointerDown);
     dom.addEventListener('touchmove', onPointerMove);
     dom.addEventListener('touchend', onPointerUp);
 
-    // Gentle auto rotation + stars slow drift
+    // Animation with time-delta + aggressive but tasteful throttling + full pause support
     let animationFrameId = null;
     let lastTime = performance.now();
     let frame = 0;
@@ -625,23 +656,22 @@ function initThreeMoon(containerId = 'hero-moon') {
     function animate() {
         animationFrameId = requestAnimationFrame(animate);
 
-        // Skip heavy work if tab hidden or not visible (fixes long RAF violations)
         if (document.hidden) return;
 
         const now = performance.now();
-        const delta = Math.min((now - lastTime) / 16.666, 3); // normalize + clamp
+        const delta = Math.min((now - lastTime) / 16.666, 3);
         lastTime = now;
 
         if (rotationSpeed !== 0 || isDragging) {
             moon.rotation.y += rotationSpeed * delta;
-            stars.rotation.y += rotationSpeed * 0.2 * delta;
+            stars.rotation.y += rotationSpeed * 0.14 * delta;
+            brightStars.rotation.y += rotationSpeed * 0.07 * delta;
             needsRender = true;
         }
 
         frame = (frame + 1) % 2;
 
-        // During pure auto-rotate, throttle render to every other frame (~30fps) to reduce violations
-        // Full rate only when interacting or needsRender
+        // Throttle idle auto-rotate render to ~30 fps equivalent; full when drag or flag
         if (needsRender || isDragging || frame === 0) {
             renderer.render(scene, camera);
             needsRender = false;
@@ -662,7 +692,6 @@ function initThreeMoon(containerId = 'hero-moon') {
         }
     }
 
-    // Pause when tab is hidden or page not visible - critical for perf
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
             stopAnimation();
@@ -671,7 +700,6 @@ function initThreeMoon(containerId = 'hero-moon') {
         }
     });
 
-    // Use IntersectionObserver to only animate when hero is in view
     const moonObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
@@ -684,7 +712,6 @@ function initThreeMoon(containerId = 'hero-moon') {
 
     moonObserver.observe(container);
 
-    // Start initially
     startAnimation();
 
     // Responsive
@@ -694,11 +721,11 @@ function initThreeMoon(containerId = 'hero-moon') {
         renderer.setSize(container.clientWidth, container.clientHeight);
     });
 
-    // Optional: subtle auto-tilt on load
-    setTimeout(() => {
-        moon.rotation.x = 0.15;
-        needsRender = true;
-    }, 800);
+    // Beautiful initial orientation (slightly tipped, good face presented)
+    moon.rotation.x = 0.115;
+    moon.rotation.y = 0.85;
+    earth.rotation.y = 1.6;
+    needsRender = true;
 }
 
 function initPortfolio() {
