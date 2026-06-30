@@ -313,13 +313,12 @@ live_market = {
     "updated": "seed"
 }
 
+LAUNCHES_LIMIT = 12
+
 launches_cache = {
-    "launches": [
-        {"name": "Starship Flight 12", "net": "", "status": "Go for Launch", "provider": "SpaceX", "rocket": "Starship Super Heavy", "mission": "Orbital test", "pad": "Starbase, TX"},
-        {"name": "Falcon 9 | Starlink", "net": "", "status": "Go for Launch", "provider": "SpaceX", "rocket": "Falcon 9", "mission": "Starlink", "pad": "Cape Canaveral SLC-40"},
-        {"name": "Electron | Kineis IoT", "net": "", "status": "Go for Launch", "provider": "Rocket Lab", "rocket": "Electron", "mission": "IoT constellation", "pad": "Mahia LC-1"}
-    ],
-    "updated": "seed"
+    "launches": [],
+    "updated": None,
+    "source": "launch_library"
 }
 
 async def _refresh_live_market():
@@ -339,35 +338,62 @@ async def _refresh_live_market():
             print(f"[LUNARA] Live market refresh error: {e}")
         await asyncio.sleep(15)  # refresh every 15s (Yahoo friendly)
 
+def _parse_launch_item(item: dict) -> dict:
+    pad = item.get("pad") or {}
+    location = pad.get("location") or {}
+    rocket_cfg = (item.get("rocket") or {}).get("configuration") or {}
+    return {
+        "name": item.get("name", "TBD Launch"),
+        "net": item.get("net", ""),
+        "status": (item.get("status") or {}).get("name", "Unknown"),
+        "provider": (item.get("launch_service_provider") or {}).get("name", ""),
+        "rocket": rocket_cfg.get("full_name") or rocket_cfg.get("name", ""),
+        "mission": (item.get("mission") or {}).get("name", ""),
+        "pad": pad.get("name", ""),
+        "location": location.get("name", ""),
+        "country": location.get("country_code", ""),
+    }
+
+
+async def _fetch_launches_from_api(limit: int = LAUNCHES_LIMIT) -> list:
+    """Fetch upcoming global launches from The Space Devs Launch Library."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(
+            "https://ll.thespacedevs.com/2.2.0/launch/upcoming/",
+            params={"limit": limit, "format": "json"},
+        )
+        if r.status_code != 200:
+            return []
+        return [_parse_launch_item(item) for item in r.json().get("results", [])]
+
+
+async def _refresh_launches_cache(force: bool = False) -> bool:
+    """Refresh in-memory launch cache. Returns True if data was updated."""
+    updated = launches_cache.get("updated")
+    if not force and updated:
+        try:
+            last = datetime.fromisoformat(updated.replace("Z", ""))
+            if (datetime.utcnow() - last).total_seconds() < 300:
+                return False
+        except Exception:
+            pass
+    try:
+        launches = await _fetch_launches_from_api()
+        if launches:
+            launches_cache["launches"] = launches[:LAUNCHES_LIMIT]
+            launches_cache["updated"] = datetime.utcnow().isoformat() + "Z"
+            return True
+    except Exception as e:
+        print(f"[LUNARA] Launches refresh error: {e}")
+    return False
+
+
 async def _refresh_launches():
     """Background refresher for real-time upcoming rocket launches."""
-    await asyncio.sleep(5)  # Delay first fetch so startup is fast
+    await _refresh_launches_cache(force=True)
     while True:
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.get(
-                    "https://ll.thespacedevs.com/2.2.0/launch/upcoming/",
-                    params={"limit": 5, "format": "json"}
-                )
-                if r.status_code == 200:
-                    data = r.json()
-                    launches = []
-                    for item in data.get("results", []):
-                        launches.append({
-                            "name": item.get("name", "TBD Launch"),
-                            "net": item.get("net", ""),
-                            "status": item.get("status", {}).get("name", "Unknown"),
-                            "provider": item.get("launch_service_provider", {}).get("name", ""),
-                            "rocket": item.get("rocket", {}).get("configuration", {}).get("name", ""),
-                            "mission": (item.get("mission") or {}).get("name", ""),
-                            "pad": item.get("pad", {}).get("name", "")
-                        })
-                    if launches:
-                        launches_cache["launches"] = launches[:5]
-                        launches_cache["updated"] = datetime.utcnow().isoformat() + "Z"
-        except Exception as e:
-            print(f"[LUNARA] Launches refresh error: {e}")
         await asyncio.sleep(300)  # refresh every 5 minutes
+        await _refresh_launches_cache(force=True)
 
 # Combined SSE stream for live market updates (stocks + crypto)
 @app.get("/api/market/stream")
@@ -436,13 +462,17 @@ async def api_news():
 
 @app.get("/api/launches")
 async def api_launches():
-    """Real-time upcoming rocket launch schedule."""
-    if launches_cache.get("launches"):
-        return {
-            "launches": launches_cache["launches"],
-            "updated": launches_cache.get("updated", "")
-        }
-    return {"launches": [], "updated": ""}
+    """Real-time global upcoming rocket launch schedule."""
+    if not launches_cache.get("launches"):
+        await _refresh_launches_cache(force=True)
+    else:
+        await _refresh_launches_cache()
+    return {
+        "launches": launches_cache.get("launches", []),
+        "updated": launches_cache.get("updated", ""),
+        "source": launches_cache.get("source", "launch_library"),
+        "count": len(launches_cache.get("launches", [])),
+    }
 
 # Educational projections - server side for reliability
 @app.post("/api/projections")

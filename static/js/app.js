@@ -398,9 +398,22 @@ function renderNews() {
     });
 }
 
+function formatLaunchTime(net) {
+    if (!net) return 'TBD';
+    const d = new Date(net);
+    if (Number.isNaN(d.getTime())) return 'TBD';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
+        d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function renderLaunches() {
     const container = document.getElementById('launches-feed');
-    if (!container || !launchesData.length) return;
+    if (!container) return;
+
+    if (!launchesData.length) {
+        container.innerHTML = '<div class="text-white/40 text-center py-6">No upcoming launches found. Refreshing…</div>';
+        return;
+    }
 
     container.innerHTML = '';
 
@@ -408,15 +421,16 @@ function renderLaunches() {
         const div = document.createElement('div');
         const isStarship = /starship|super heavy/i.test(launch.rocket || '') || /starship/i.test(launch.name || '');
         div.className = `px-3 py-2 rounded-lg flex items-start gap-x-2 text-[10px] ${isStarship ? 'bg-cyan-500/10 border border-cyan-500/20' : 'bg-white/5'}`;
-        const netDate = launch.net ? new Date(launch.net).toLocaleDateString() + ' ' + new Date(launch.net).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'TBD';
+        const place = [launch.pad, launch.location].filter(Boolean).join(' • ');
+        const country = launch.country ? ` (${launch.country})` : '';
         div.innerHTML = `
             <div class="flex-1 min-w-0">
                 <div class="font-medium truncate">${launch.name}</div>
                 <div class="text-white/50">${launch.provider} • ${launch.rocket}</div>
-                ${launch.pad ? `<div class="text-[8px] text-white/30 mt-0.5">${launch.pad}</div>` : ''}
+                ${place ? `<div class="text-[8px] text-white/30 mt-0.5 truncate">${place}${country}</div>` : ''}
             </div>
             <div class="text-right text-emerald-400 whitespace-nowrap shrink-0">
-                ${netDate}<br>
+                ${formatLaunchTime(launch.net)}<br>
                 <span class="text-[8px] text-white/40">${launch.status}</span>
             </div>
         `;
@@ -430,18 +444,21 @@ async function fetchLaunches() {
         const data = await res.json();
         launchesData = data.launches || [];
         const updatedEl = document.getElementById('launches-updated');
-        if (updatedEl && data.updated) {
-            const ts = new Date(data.updated);
-            updatedEl.textContent = 'Updated ' + ts.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        if (updatedEl) {
+            const count = data.count || launchesData.length;
+            if (data.updated) {
+                const ts = new Date(data.updated);
+                updatedEl.textContent = `${count} global launches • updated ${ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            } else {
+                updatedEl.textContent = `${count} global launches`;
+            }
         }
         renderLaunches();
     } catch (e) {
         console.error('Failed to fetch launches', e);
-        launchesData = [
-            { name: "Starship Flight 12", net: new Date(Date.now() + 604800000).toISOString(), provider: "SpaceX", rocket: "Starship Super Heavy", status: "Go", pad: "Starbase, TX" },
-            { name: "Falcon 9 | Starlink Group 6-1", net: new Date(Date.now() + 86400000).toISOString(), provider: "SpaceX", rocket: "Falcon 9", status: "Go", pad: "Cape Canaveral SLC-40" },
-            { name: "Electron | Kineis IoT", net: new Date(Date.now() + 172800000).toISOString(), provider: "Rocket Lab", rocket: "Electron", status: "Go", pad: "Mahia LC-1" }
-        ];
+        const updatedEl = document.getElementById('launches-updated');
+        if (updatedEl) updatedEl.textContent = 'Live feed unavailable';
+        launchesData = [];
         renderLaunches();
     }
 }
@@ -682,6 +699,10 @@ function setupMarketStream() {
                 if (data.cryptos && data.cryptos.length > 0) {
                     cryptoData = data.cryptos;
                     renderCryptoMarket();
+                }
+                if (data.launches && data.launches.length > 0) {
+                    launchesData = data.launches;
+                    renderLaunches();
                 }
                 updatePortfolioValue();
             } catch (parseErr) {

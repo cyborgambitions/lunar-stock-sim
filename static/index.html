@@ -374,8 +374,8 @@
         <!-- Rocket Launch Schedule (real-time) -->
         <div class="mb-6">
             <div class="flex items-center justify-between mb-2 px-1">
-                <div class="font-space text-lg tracking-tight">Real-Time Rocket Launch Schedule</div>
-                <div id="launches-updated" class="text-[10px] text-white/40"></div>
+                <div class="font-space text-lg tracking-tight">Global Rocket Launch Schedule</div>
+                <div id="launches-updated" class="text-[10px] text-white/40">Loading live schedule…</div>
             </div>
             <div class="glass rounded-3xl border border-white/10 overflow-hidden">
                 <div class="grid grid-cols-1 lg:grid-cols-5 gap-0">
@@ -394,7 +394,7 @@
                         </div>
                     </div>
                     <div class="lg:col-span-3 p-4">
-                        <div id="launches-feed" class="space-y-1 text-xs">
+                        <div id="launches-feed" class="space-y-1 text-xs max-h-[320px] overflow-y-auto pr-1">
                             <!-- Populated by JS (compact rows) -->
                         </div>
                     </div>
