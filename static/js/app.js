@@ -406,14 +406,16 @@ function renderLaunches() {
 
     launchesData.forEach(launch => {
         const div = document.createElement('div');
-        div.className = 'px-3 py-1 bg-white/5 rounded-lg flex items-start gap-x-2 text-[10px]';
+        const isStarship = /starship|super heavy/i.test(launch.rocket || '') || /starship/i.test(launch.name || '');
+        div.className = `px-3 py-2 rounded-lg flex items-start gap-x-2 text-[10px] ${isStarship ? 'bg-cyan-500/10 border border-cyan-500/20' : 'bg-white/5'}`;
         const netDate = launch.net ? new Date(launch.net).toLocaleDateString() + ' ' + new Date(launch.net).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'TBD';
         div.innerHTML = `
-            <div class="flex-1">
-                <div class="font-medium">${launch.name}</div>
+            <div class="flex-1 min-w-0">
+                <div class="font-medium truncate">${launch.name}</div>
                 <div class="text-white/50">${launch.provider} • ${launch.rocket}</div>
+                ${launch.pad ? `<div class="text-[8px] text-white/30 mt-0.5">${launch.pad}</div>` : ''}
             </div>
-            <div class="text-right text-emerald-400 whitespace-nowrap">
+            <div class="text-right text-emerald-400 whitespace-nowrap shrink-0">
                 ${netDate}<br>
                 <span class="text-[8px] text-white/40">${launch.status}</span>
             </div>
@@ -427,13 +429,18 @@ async function fetchLaunches() {
         const res = await fetch('/api/launches?t=' + Date.now());
         const data = await res.json();
         launchesData = data.launches || [];
+        const updatedEl = document.getElementById('launches-updated');
+        if (updatedEl && data.updated) {
+            const ts = new Date(data.updated);
+            updatedEl.textContent = 'Updated ' + ts.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        }
         renderLaunches();
     } catch (e) {
         console.error('Failed to fetch launches', e);
-        // Fallback sample
         launchesData = [
-            { name: "SpaceX Starlink 6-1", net: new Date(Date.now() + 86400000).toISOString(), provider: "SpaceX", rocket: "Falcon 9", status: "Go" },
-            { name: "Rocket Lab Electron", net: new Date(Date.now() + 172800000).toISOString(), provider: "Rocket Lab", rocket: "Electron", status: "Go" }
+            { name: "Starship Flight 12", net: new Date(Date.now() + 604800000).toISOString(), provider: "SpaceX", rocket: "Starship Super Heavy", status: "Go", pad: "Starbase, TX" },
+            { name: "Falcon 9 | Starlink Group 6-1", net: new Date(Date.now() + 86400000).toISOString(), provider: "SpaceX", rocket: "Falcon 9", status: "Go", pad: "Cape Canaveral SLC-40" },
+            { name: "Electron | Kineis IoT", net: new Date(Date.now() + 172800000).toISOString(), provider: "Rocket Lab", rocket: "Electron", status: "Go", pad: "Mahia LC-1" }
         ];
         renderLaunches();
     }

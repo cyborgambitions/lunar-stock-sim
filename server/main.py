@@ -10,20 +10,44 @@ import httpx
 import feedparser
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+
+# Windows console Unicode safety (prevents cp1252/charmap crashes)
+import sys
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 load_dotenv()  # Load XAI_API_KEY etc from .env if present (local dev)
 
 # Startup validation for critical env vars
 xai_key = os.getenv("XAI_API_KEY") or os.getenv("LUNARA_XAI_KEY")
 if xai_key:
-    print("✓ XAI_API_KEY loaded for Grok Orbital Agent")
+    print("[OK] XAI_API_KEY loaded for Grok Orbital Agent")
 else:
-    print("⚠️  XAI_API_KEY not set - Orbital Agent will be offline. Set it in .env (local) or Render dashboard.")
+    print("[WARN] XAI_API_KEY not set - Orbital Agent will be offline. Set it in .env (local) or Render dashboard.")
 
 # yfinance removed from price fetching to avoid GraphQL validation errors from Yahoo
 # (see _fetch_one_yahoo_price)
 
-app = FastAPI(title="LUNARA - Cislunar Economy Portfolio Simulator")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: launch background refreshers (skip in tests to keep startup fast)
+    if os.getenv("LUNARA_TESTING") != "1":
+        asyncio.create_task(_refresh_live_market())
+        asyncio.create_task(_refresh_launches())
+        print("[LUNARA] Long-lived market data stream refresher started.")
+        print("[LUNARA] Rocket launch schedule refresher started.")
+    yield
+    # Shutdown: nothing special needed
+
+app = FastAPI(
+    title="LUNARA - Cislunar Economy Portfolio Simulator",
+    lifespan=lifespan
+)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -275,30 +299,49 @@ SPACE_FEEDS = [
 
 # ============ LONG STREAM / SSE MARKET DATA INTEGRATION ============
 # Shared live market data refreshed in background for efficient streaming
+# Seed with demo data so UI and APIs respond instantly (real data fills in background)
 live_market = {
-    "stocks": [],
-    "cryptos": [],
-    "updated": ""
+    "stocks": [
+        {"ticker": "RKLB", "name": "Rocket Lab USA", "price": 5.42, "change": 3.8, "sector": "Aerospace & Defense"},
+        {"ticker": "ASTS", "name": "AST SpaceMobile", "price": 12.15, "change": -1.2, "sector": "Aerospace & Defense"},
+        {"ticker": "LUNR", "name": "Intuitive Machines", "price": 4.88, "change": 7.5, "sector": "Aerospace & Defense"},
+    ],
+    "cryptos": [
+        {"ticker": "BTC-USD", "name": "Bitcoin", "price": 67200.0, "change": 1.4, "sector": "Cryptocurrency / Blockchain"},
+        {"ticker": "ETH-USD", "name": "Ethereum", "price": 3450.0, "change": -0.8, "sector": "Cryptocurrency / Blockchain"},
+    ],
+    "updated": "seed"
 }
 
 launches_cache = {
-    "launches": [],
-    "updated": ""
+    "launches": [
+        {"name": "Starship Flight 12", "net": "", "status": "Go for Launch", "provider": "SpaceX", "rocket": "Starship Super Heavy", "mission": "Orbital test", "pad": "Starbase, TX"},
+        {"name": "Falcon 9 | Starlink", "net": "", "status": "Go for Launch", "provider": "SpaceX", "rocket": "Falcon 9", "mission": "Starlink", "pad": "Cape Canaveral SLC-40"},
+        {"name": "Electron | Kineis IoT", "net": "", "status": "Go for Launch", "provider": "Rocket Lab", "rocket": "Electron", "mission": "IoT constellation", "pad": "Mahia LC-1"}
+    ],
+    "updated": "seed"
 }
 
 async def _refresh_live_market():
     """Background refresher to keep data hot for all streaming clients."""
+    await asyncio.sleep(2)  # Delay first expensive fetch so server starts fast and TestClient requests succeed immediately
     while True:
         try:
-            live_market["stocks"] = await _fetch_price_data(AEROSPACE_TICKERS, "Aerospace & Defense")
-            live_market["cryptos"] = await _fetch_price_data(CRYPTO_TICKERS, "Cryptocurrency / Blockchain")
-            live_market["updated"] = datetime.utcnow().isoformat() + "Z"
+            new_stocks = await _fetch_price_data(AEROSPACE_TICKERS, "Aerospace & Defense")
+            new_cryptos = await _fetch_price_data(CRYPTO_TICKERS, "Cryptocurrency / Blockchain")
+            if new_stocks:
+                live_market["stocks"] = new_stocks
+            if new_cryptos:
+                live_market["cryptos"] = new_cryptos
+            if new_stocks or new_cryptos:
+                live_market["updated"] = datetime.utcnow().isoformat() + "Z"
         except Exception as e:
             print(f"[LUNARA] Live market refresh error: {e}")
         await asyncio.sleep(15)  # refresh every 15s (Yahoo friendly)
 
 async def _refresh_launches():
     """Background refresher for real-time upcoming rocket launches."""
+    await asyncio.sleep(5)  # Delay first fetch so startup is fast
     while True:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
@@ -319,18 +362,12 @@ async def _refresh_launches():
                             "mission": (item.get("mission") or {}).get("name", ""),
                             "pad": item.get("pad", {}).get("name", "")
                         })
-                    launches_cache["launches"] = launches[:5]
-                    launches_cache["updated"] = datetime.utcnow().isoformat() + "Z"
+                    if launches:
+                        launches_cache["launches"] = launches[:5]
+                        launches_cache["updated"] = datetime.utcnow().isoformat() + "Z"
         except Exception as e:
             print(f"[LUNARA] Launches refresh error: {e}")
         await asyncio.sleep(300)  # refresh every 5 minutes
-
-@app.on_event("startup")
-async def _start_market_refresher():
-    asyncio.create_task(_refresh_live_market())
-    asyncio.create_task(_refresh_launches())
-    print("[LUNARA] Long-lived market data stream refresher started.")
-    print("[LUNARA] Rocket launch schedule refresher started.")
 
 # Combined SSE stream for live market updates (stocks + crypto)
 @app.get("/api/market/stream")
@@ -646,5 +683,5 @@ Ad Astra. First wave only.
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8765))
-    print(f"🌕 LUNARA running at http://localhost:{port}")
+    print(f"[LUNARA] Running at http://localhost:{port}")
     uvicorn.run("server.main:app", host="0.0.0.0", port=port, reload=True)
