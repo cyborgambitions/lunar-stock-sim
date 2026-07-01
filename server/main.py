@@ -72,39 +72,87 @@ async def favicon():
 </svg>'''
     return Response(content=svg, media_type="image/svg+xml")
 
-# Real aerospace tickers for the Lunar Market
+# Public aerospace & space tickers for the Lunar Market
+# Format: (symbol, display_name, sector)
 AEROSPACE_TICKERS = [
-    ("RKLB", "Rocket Lab USA"),
-    ("ASTS", "AST SpaceMobile"),
-    ("LUNR", "Intuitive Machines"),
-    ("SPCE", "Virgin Galactic"),
-    ("BA", "Boeing"),
-    ("LMT", "Lockheed Martin"),
-    ("NOC", "Northrop Grumman"),
-    ("RTX", "RTX Corp"),
-    ("KTOS", "Kratos Defense & Security"),
-    ("PL", "Planet Labs"),
-    ("IRDM", "Iridium Communications"),
-    ("VSAT", "Viasat"),
-    ("SATS", "EchoStar"),
-    ("GD", "General Dynamics"),
-    ("LHX", "L3Harris Technologies"),
-    ("HWM", "Howmet Aerospace"),
-    ("AVAV", "AeroVironment"),
-    ("RDW", "Redwire"),
-    ("SPIR", "Spire Global"),
-    ("MDA", "MDA Space"),
-    ("SIDU", "Sidus Space"),
-    ("FLY", "Firefly Aerospace"),
-    ("TRMB", "Trimble"),
-    ("HON", "Honeywell International"),
+    # Launch & orbital systems (pure-play)
+    ("RKLB", "Rocket Lab USA", "Launch & Space Systems"),
+    ("FLY", "Firefly Aerospace", "Launch & Space Systems"),
+    ("LUNR", "Intuitive Machines", "Launch & Space Systems"),
+    ("VOYG", "Voyager Technologies", "Launch & Space Systems"),
+    ("SPCE", "Virgin Galactic", "Launch & Space Systems"),
+    ("MNTS", "Momentus", "Launch & Space Systems"),
+    # Satellite operators & communications
+    ("ASTS", "AST SpaceMobile", "Satellite Communications"),
+    ("IRDM", "Iridium Communications", "Satellite Communications"),
+    ("VSAT", "Viasat", "Satellite Communications"),
+    ("GSAT", "Globalstar", "Satellite Communications"),
+    ("SATS", "EchoStar", "Satellite Communications"),
+    ("TSAT", "Telesat", "Satellite Communications"),
+    ("GILT", "Gilat Satellite Networks", "Satellite Communications"),
+    # Earth observation & space data
+    ("PL", "Planet Labs", "Earth Observation"),
+    ("SPIR", "Spire Global", "Earth Observation"),
+    ("BKSY", "BlackSky Technology", "Earth Observation"),
+    ("SATL", "Satellogic", "Earth Observation"),
+    ("MAXR", "Maxar Technologies", "Earth Observation"),
+    # Space manufacturing, robotics & components
+    ("MDA", "MDA Space", "Space Manufacturing"),
+    ("RDW", "Redwire", "Space Manufacturing"),
+    ("SIDU", "Sidus Space", "Space Manufacturing"),
+    ("YSS", "York Space Systems", "Space Manufacturing"),
+    ("KRMN", "Karman Space & Defense", "Space Manufacturing"),
+    ("AVAV", "AeroVironment", "Space Manufacturing"),
+    ("AIR", "AAR Corp", "Space Manufacturing"),
+    ("HEI", "HEICO", "Space Manufacturing"),
+    ("HXL", "Hexcel", "Space Manufacturing"),
+    ("TDG", "TransDigm Group", "Space Manufacturing"),
+    ("HWM", "Howmet Aerospace", "Space Manufacturing"),
+    # Defense primes & major NASA/DoD space contractors
+    ("BA", "Boeing", "Defense & Space Prime"),
+    ("LMT", "Lockheed Martin", "Defense & Space Prime"),
+    ("NOC", "Northrop Grumman", "Defense & Space Prime"),
+    ("RTX", "RTX Corp", "Defense & Space Prime"),
+    ("GD", "General Dynamics", "Defense & Space Prime"),
+    ("LHX", "L3Harris Technologies", "Defense & Space Prime"),
+    ("KTOS", "Kratos Defense & Security", "Defense & Space Prime"),
+    ("LDOS", "Leidos", "Defense & Space Prime"),
+    ("CACI", "CACI International", "Defense & Space Prime"),
+    ("SAIC", "Science Applications Intl", "Defense & Space Prime"),
+    ("TXT", "Textron", "Defense & Space Prime"),
+    ("HON", "Honeywell International", "Defense & Space Prime"),
+    ("EADSY", "Airbus SE (ADR)", "Defense & Space Prime"),
+    ("ERJ", "Embraer SA (ADR)", "Defense & Space Prime"),
+    # Space-themed ETFs (broad sector + launch exposure)
+    ("ARKX", "ARK Space Exploration ETF", "Space ETF"),
+    ("UFO", "Procure Space ETF", "Space ETF"),
+    ("ROKT", "SPDR Kensho Final Frontiers ETF", "Space ETF"),
+    ("ITA", "iShares US Aerospace & Defense ETF", "Space ETF"),
+    ("XAR", "SPDR S&P Aerospace & Defense ETF", "Space ETF"),
+    # Geospatial & space-adjacent infrastructure
+    ("TRMB", "Trimble", "Space Infrastructure"),
+]
+
+# SpaceX is private — listed for visibility with proxy exposure notes (not Yahoo-fetchable)
+PRIVATE_AEROSPACE_ENTRIES = [
+    {
+        "ticker": "SPX",
+        "name": "SpaceX (Space Exploration Technologies)",
+        "price": 0,
+        "change": 0,
+        "sector": "Launch & Space Systems",
+        "tradable": False,
+        "private": True,
+        "note": "Private — not publicly traded. Indirect exposure via SATS (EchoStar SpaceX stake), GSAT (launch contracts), ARKX/UFO ETFs.",
+        "proxies": ["SATS", "GSAT", "ARKX", "RKLB"],
+    }
 ]
 
 # ---- Reliable real-time market data via Yahoo Finance direct endpoint ----
 YAHOO_CHART_API = "https://query1.finance.yahoo.com/v8/finance/chart"
 _market_cache = {}
 CACHE_TTL_SECONDS = 45
-_fetch_sem = asyncio.Semaphore(6)  # limit concurrent Yahoo calls to avoid rate limits
+_fetch_sem = asyncio.Semaphore(10)  # limit concurrent Yahoo calls to avoid rate limits
 
 
 async def _fetch_one_yahoo_price(symbol: str, name: str, default_sector: str):
@@ -210,18 +258,33 @@ async def _fetch_one_yahoo_price(symbol: str, name: str, default_sector: str):
     return {"ticker": symbol, "name": name, "price": round(float(price), 2) if price else 0.0, "change": round(float(ch), 2), "sector": default_sector}
 
 
+def _normalize_ticker_entry(entry, default_sector="Market"):
+    if len(entry) == 3:
+        return entry[0], entry[1], entry[2]
+    return entry[0], entry[1], default_sector
+
+
+def _attach_private_entries(stocks):
+    """Prepend private aerospace names (e.g. SpaceX) ahead of public tickers."""
+    if not PRIVATE_AEROSPACE_ENTRIES:
+        return stocks
+    private_tickers = {p["ticker"] for p in PRIVATE_AEROSPACE_ENTRIES}
+    public = [s for s in stocks if s.get("ticker") not in private_tickers]
+    return list(PRIVATE_AEROSPACE_ENTRIES) + public
+
+
 async def _fetch_price_data(tickers_with_names, default_sector="Market"):
     """Yahoo Finance scrape (HTML fin-streamer) or reliable v8/chart endpoint. Parallel + cached for data router + orbital agent."""
     now = datetime.utcnow()
     # Use symbols tuple for unique cache key (handles overlapping tickers between lists)
-    cache_key = tuple(sorted(t[0] for t in tickers_with_names))
+    cache_key = tuple(sorted(_normalize_ticker_entry(t)[0] for t in tickers_with_names))
     cached = _market_cache.get(cache_key)
     if cached and (now - cached["ts"]).total_seconds() < CACHE_TTL_SECONDS:
         return cached["data"]
 
     tasks = [
-        _fetch_one_yahoo_price(ticker, name, default_sector)
-        for ticker, name in tickers_with_names
+        _fetch_one_yahoo_price(sym, name, sector)
+        for sym, name, sector in (_normalize_ticker_entry(t, default_sector) for t in tickers_with_names)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     data = []
@@ -247,12 +310,14 @@ async def api_stocks():
     if live_market["stocks"]:
         return {
             "stocks": live_market["stocks"],
+            "count": len(live_market["stocks"]),
             "updated": live_market["updated"],
             "source": "Yahoo Finance direct (v8/chart, live stream)"
         }
-    stocks = await _fetch_price_data(AEROSPACE_TICKERS, "Aerospace & Defense")
+    stocks = _attach_private_entries(await _fetch_price_data(AEROSPACE_TICKERS, "Aerospace & Defense"))
     return {
         "stocks": stocks,
+        "count": len(stocks),
         "updated": datetime.utcnow().isoformat() + "Z",
         "source": "Yahoo Finance direct (v8/chart, cached)"
     }
@@ -301,11 +366,11 @@ SPACE_FEEDS = [
 # Shared live market data refreshed in background for efficient streaming
 # Seed with demo data so UI and APIs respond instantly (real data fills in background)
 live_market = {
-    "stocks": [
-        {"ticker": "RKLB", "name": "Rocket Lab USA", "price": 5.42, "change": 3.8, "sector": "Aerospace & Defense"},
-        {"ticker": "ASTS", "name": "AST SpaceMobile", "price": 12.15, "change": -1.2, "sector": "Aerospace & Defense"},
-        {"ticker": "LUNR", "name": "Intuitive Machines", "price": 4.88, "change": 7.5, "sector": "Aerospace & Defense"},
-    ],
+    "stocks": _attach_private_entries([
+        {"ticker": "RKLB", "name": "Rocket Lab USA", "price": 5.42, "change": 3.8, "sector": "Launch & Space Systems"},
+        {"ticker": "ASTS", "name": "AST SpaceMobile", "price": 12.15, "change": -1.2, "sector": "Satellite Communications"},
+        {"ticker": "LUNR", "name": "Intuitive Machines", "price": 4.88, "change": 7.5, "sector": "Launch & Space Systems"},
+    ]),
     "cryptos": [
         {"ticker": "BTC-USD", "name": "Bitcoin", "price": 67200.0, "change": 1.4, "sector": "Cryptocurrency / Blockchain"},
         {"ticker": "ETH-USD", "name": "Ethereum", "price": 3450.0, "change": -0.8, "sector": "Cryptocurrency / Blockchain"},
@@ -326,7 +391,7 @@ async def _refresh_live_market():
     await asyncio.sleep(2)  # Delay first expensive fetch so server starts fast and TestClient requests succeed immediately
     while True:
         try:
-            new_stocks = await _fetch_price_data(AEROSPACE_TICKERS, "Aerospace & Defense")
+            new_stocks = _attach_private_entries(await _fetch_price_data(AEROSPACE_TICKERS, "Aerospace & Defense"))
             new_cryptos = await _fetch_price_data(CRYPTO_TICKERS, "Cryptocurrency / Blockchain")
             if new_stocks:
                 live_market["stocks"] = new_stocks
@@ -336,7 +401,7 @@ async def _refresh_live_market():
                 live_market["updated"] = datetime.utcnow().isoformat() + "Z"
         except Exception as e:
             print(f"[LUNARA] Live market refresh error: {e}")
-        await asyncio.sleep(15)  # refresh every 15s (Yahoo friendly)
+        await asyncio.sleep(30)  # refresh every 30s (large ticker universe, Yahoo friendly)
 
 def _parse_launch_item(item: dict) -> dict:
     pad = item.get("pad") or {}
@@ -667,7 +732,8 @@ Ad Astra. First wave only.
     system_prompt = (
         "You are Grok, the Orbital Investment Agent for LUNARA — an educational simulator of the cislunar economy. "
         "Your personality: insightful, slightly irreverent, optimistic about humanity's multi-planetary future, and focused on long-term value creation in space. "
-        "You can answer general questions about space stocks (RKLB, ASTS, LUNR, etc.), crypto, companies, markets, cislunar topics, etc., as well as provide personalized advice. "
+        "You can answer general questions about space stocks (RKLB, ASTS, LUNR, SPX/SpaceX proxies, defense primes, space ETFs, etc.), crypto, companies, markets, cislunar topics, etc., as well as provide personalized advice. "
+        "SpaceX (SPX) is private and not tradable in the simulator — suggest public proxies like SATS, GSAT, ARKX, RKLB for SpaceX exposure. "
         "The backend has /api/rebalance that computes exact buy/sell trades to reach target portfolio weights using live prices. When the user has a portfolio, you can suggest target allocations (e.g. 35% RKLB, 25% ASTS, 20% LUNR, 20% BTC-USD) and tell them to POST that to /api/rebalance for the precise trades. "
         "When portfolio, market data, or news context is provided, use it to ground answers where relevant. For direct questions like current prices, refer to the provided market data (in USD) if available and note that this is for educational simulation only — not real trading advice.\n\n"
         "Guidelines:\n"

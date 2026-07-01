@@ -25,7 +25,12 @@ async function fetchStocks() {
     try {
         const res = await fetch('/api/stocks?t=' + Date.now());
         const data = await res.json();
-        stocksData = data.stocks;
+        stocksData = data.stocks || [];
+        const countEl = document.getElementById('market-ticker-count');
+        if (countEl) {
+            const n = data.count || stocksData.length;
+            countEl.textContent = `${n} tickers tracked`;
+        }
         renderMarket();
         updatePortfolioValue();
     } catch (e) {
@@ -72,32 +77,44 @@ function renderMarket() {
 
     stocksData.forEach(stock => {
         const row = document.createElement('tr');
-        row.className = `stock-row border-b border-white/10 ${stock.price === 0 ? 'opacity-60' : ''}`;
-        
+        const isPrivate = stock.private || stock.tradable === false;
+        const noPrice = !stock.price || stock.price === 0;
+        row.className = `stock-row border-b border-white/10 ${noPrice && !isPrivate ? 'opacity-60' : ''} ${isPrivate ? 'bg-violet-500/5' : ''}`;
+
         const changeClass = stock.change >= 0 ? 'text-emerald-400' : 'text-red-400';
-        
-        row.innerHTML = `
-            <td class="py-4 px-6 font-mono font-semibold text-lg">${stock.ticker}</td>
-            <td class="py-4 px-6">
-                <div class="font-medium">${stock.name}</div>
-                <div class="text-[10px] text-white/40">${stock.sector || 'Aerospace'}</div>
-            </td>
-            <td class="py-4 px-6 text-right font-mono text-lg money">${formatPrice(stock.price)}</td>
-            <td class="py-4 px-6 text-right">
-                <span class="font-mono font-medium ${changeClass}">
-                    ${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%
-                </span>
-            </td>
-            <td class="py-4 px-6">
-                <div class="flex items-center gap-2 justify-end">
-                    <input type="number" id="qty-s-${stock.ticker}" name="qty-s-${stock.ticker}" autocomplete="off" value="10" min="1" step="1" 
+        const priceCell = isPrivate
+            ? '<span class="text-[10px] uppercase tracking-wider text-violet-300">Private</span>'
+            : (noPrice ? '<span class="text-white/40 text-sm">—</span>' : formatPrice(stock.price));
+        const changeCell = isPrivate
+            ? '<span class="text-[10px] text-white/40">N/A</span>'
+            : `<span class="font-mono font-medium ${changeClass}">${stock.change >= 0 ? '+' : ''}${(stock.change || 0).toFixed(2)}%</span>`;
+        const privateNote = isPrivate && stock.note
+            ? `<div class="text-[9px] text-violet-300/70 mt-0.5 max-w-xs">${stock.note}</div>`
+            : '';
+        const buyCell = isPrivate
+            ? `<span class="text-[10px] text-white/40 italic">Proxies: ${(stock.proxies || []).join(', ')}</span>`
+            : `<div class="flex items-center gap-2 justify-end">
+                    <input type="number" id="qty-s-${stock.ticker}" name="qty-s-${stock.ticker}" autocomplete="off" value="10" min="1" step="1"
                            class="w-16 bg-white/5 border border-white/20 rounded px-2 py-1 text-sm text-right">
-                    <button onclick="buyStockFromInput('${stock.ticker}')" 
+                    <button onclick="buyStockFromInput('${stock.ticker}')"
                             class="px-4 py-1 text-xs bg-emerald-500/80 hover:bg-emerald-400 text-black rounded-2xl transition-colors font-medium">
                         BUY
                     </button>
-                </div>
+               </div>`;
+
+        row.innerHTML = `
+            <td class="py-4 px-6 font-mono font-semibold text-lg">
+                ${stock.ticker}
+                ${isPrivate ? '<div class="text-[8px] text-violet-400 font-sans font-normal">NOT LISTED</div>' : ''}
             </td>
+            <td class="py-4 px-6">
+                <div class="font-medium">${stock.name}</div>
+                <div class="text-[10px] text-white/40">${stock.sector || 'Aerospace'}</div>
+                ${privateNote}
+            </td>
+            <td class="py-4 px-6 text-right font-mono text-lg money">${priceCell}</td>
+            <td class="py-4 px-6 text-right">${changeCell}</td>
+            <td class="py-4 px-6">${buyCell}</td>
         `;
         container.appendChild(row);
     });
@@ -145,6 +162,11 @@ function renderCryptoMarket() {
 function buyAsset(ticker, amount, isCrypto = false) {
     const data = isCrypto ? cryptoData : stocksData;
     const asset = data.find(a => a.ticker === ticker);
+    if (asset && (asset.private || asset.tradable === false)) {
+        const proxies = (asset.proxies || []).join(', ');
+        alert(`${ticker} is a private company and cannot be bought in the simulator.${proxies ? ' Try public proxies: ' + proxies + '.' : ''}`);
+        return;
+    }
     if (!asset || !asset.price || asset.price === 0) {
         alert("Current price not available for " + ticker + ". Try refreshing.");
         return;
@@ -694,6 +716,8 @@ function setupMarketStream() {
 
                 if (data.stocks && data.stocks.length > 0) {
                     stocksData = data.stocks;
+                    const countEl = document.getElementById('market-ticker-count');
+                    if (countEl) countEl.textContent = `${stocksData.length} tickers tracked`;
                     renderMarket();
                 }
                 if (data.cryptos && data.cryptos.length > 0) {
