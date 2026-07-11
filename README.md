@@ -3,7 +3,7 @@
 
 **LUNARA** is a free, fun, and educational web app that lets you simulate building a portfolio in the emerging cislunar (Earth-Moon) economy — starting with a realistic $2,500 (what most American families can afford to experiment with).
 
-- Real-time aerospace & space industry market data (RKLB, ASTS, LUNR, SPCX/SpaceX, BA, LMT, etc.)
+- Real-time aerospace & space industry market data (SPCX/SpaceX, RKLB, ASTS, LUNR, BA, LMT, etc.)
 - Real-time crypto & blockchain investments (BTC, ETH, SOL, LINK, RNDR + space equities)
 - Portfolio simulator with buy/sell, cash from "ground operations," and live P/L
 - 10-year growth projections (optimistic / base / pessimistic) with interactive chart

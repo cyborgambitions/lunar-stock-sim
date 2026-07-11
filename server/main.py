@@ -76,6 +76,8 @@ async def favicon():
 # Format: (symbol, display_name, sector)
 AEROSPACE_TICKERS = [
     # Launch & orbital systems (pure-play)
+    # SpaceX is public (SPCX) — live Yahoo prices, fully tradable in the simulator
+    ("SPCX", "SpaceX (Space Exploration Technologies)", "Launch & Space Systems"),
     ("RKLB", "Rocket Lab USA", "Launch & Space Systems"),
     ("FLY", "Firefly Aerospace", "Launch & Space Systems"),
     ("LUNR", "Intuitive Machines", "Launch & Space Systems"),
@@ -133,20 +135,9 @@ AEROSPACE_TICKERS = [
     ("TRMB", "Trimble", "Space Infrastructure"),
 ]
 
-# SpaceX is private — listed for visibility with proxy exposure notes (not Yahoo-fetchable)
-PRIVATE_AEROSPACE_ENTRIES = [
-    {
-        "ticker": "SPX",
-        "name": "SpaceX (Space Exploration Technologies)",
-        "price": 0,
-        "change": 0,
-        "sector": "Launch & Space Systems",
-        "tradable": False,
-        "private": True,
-        "note": "Private — not publicly traded. Indirect exposure via SATS (EchoStar SpaceX stake), GSAT (launch contracts), ARKX/UFO ETFs.",
-        "proxies": ["SATS", "GSAT", "ARKX", "RKLB"],
-    }
-]
+# Private aerospace names (placeholder for future unlisted companies).
+# SpaceX is public as SPCX and lives in AEROSPACE_TICKERS with live Yahoo prices.
+PRIVATE_AEROSPACE_ENTRIES = []
 
 # ---- Reliable real-time market data via Yahoo Finance direct endpoint ----
 YAHOO_CHART_API = "https://query1.finance.yahoo.com/v8/finance/chart"
@@ -265,7 +256,7 @@ def _normalize_ticker_entry(entry, default_sector="Market"):
 
 
 def _attach_private_entries(stocks):
-    """Prepend private aerospace names (e.g. SpaceX) ahead of public tickers."""
+    """Prepend any private aerospace entries ahead of public tickers (no-op when list is empty)."""
     if not PRIVATE_AEROSPACE_ENTRIES:
         return stocks
     private_tickers = {p["ticker"] for p in PRIVATE_AEROSPACE_ENTRIES}
@@ -331,7 +322,8 @@ CRYPTO_TICKERS = [
     ("RNDR-USD", "Render"),
     ("AVAX-USD", "Avalanche"),
     ("FET-USD", "Fetch.ai"),
-    # Core space equities for cislunar theme (real listed, not private)
+    # Core space equities for cislunar theme (publicly listed)
+    ("SPCX", "SpaceX"),
     ("RKLB", "Rocket Lab"),
     ("ASTS", "AST SpaceMobile"),
     ("LUNR", "Intuitive Machines"),
@@ -367,6 +359,7 @@ SPACE_FEEDS = [
 # Seed with demo data so UI and APIs respond instantly (real data fills in background)
 live_market = {
     "stocks": _attach_private_entries([
+        {"ticker": "SPCX", "name": "SpaceX (Space Exploration Technologies)", "price": 145.30, "change": 0.0, "sector": "Launch & Space Systems"},
         {"ticker": "RKLB", "name": "Rocket Lab USA", "price": 5.42, "change": 3.8, "sector": "Launch & Space Systems"},
         {"ticker": "ASTS", "name": "AST SpaceMobile", "price": 12.15, "change": -1.2, "sector": "Satellite Communications"},
         {"ticker": "LUNR", "name": "Intuitive Machines", "price": 4.88, "change": 7.5, "sector": "Launch & Space Systems"},
@@ -732,8 +725,8 @@ Ad Astra. First wave only.
     system_prompt = (
         "You are Grok, the Orbital Investment Agent for LUNARA — an educational simulator of the cislunar economy. "
         "Your personality: insightful, slightly irreverent, optimistic about humanity's multi-planetary future, and focused on long-term value creation in space. "
-        "You can answer general questions about space stocks (RKLB, ASTS, LUNR, SPX/SpaceX proxies, defense primes, space ETFs, etc.), crypto, companies, markets, cislunar topics, etc., as well as provide personalized advice. "
-        "SpaceX (SPX) is private and not tradable in the simulator — suggest public proxies like SATS, GSAT, ARKX, RKLB for SpaceX exposure. "
+        "You can answer general questions about space stocks (SPCX/SpaceX, RKLB, ASTS, LUNR, defense primes, space ETFs, etc.), crypto, companies, markets, cislunar topics, etc., as well as provide personalized advice. "
+        "SpaceX is publicly traded as SPCX and is fully tradable in the simulator with live prices. Prefer SPCX for direct SpaceX exposure; SATS, GSAT, ARKX, and RKLB remain useful complements or alternatives. "
         "The backend has /api/rebalance that computes exact buy/sell trades to reach target portfolio weights using live prices. When the user has a portfolio, you can suggest target allocations (e.g. 35% RKLB, 25% ASTS, 20% LUNR, 20% BTC-USD) and tell them to POST that to /api/rebalance for the precise trades. "
         "When portfolio, market data, or news context is provided, use it to ground answers where relevant. For direct questions like current prices, refer to the provided market data (in USD) if available and note that this is for educational simulation only — not real trading advice.\n\n"
         "Guidelines:\n"
