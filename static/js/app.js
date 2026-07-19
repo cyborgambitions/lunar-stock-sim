@@ -13,6 +13,36 @@ let launchesData = [];
 let nasaAwardsData = [];
 let nasaAwardsMeta = { as_of: null, disclaimer: '', programs: [] };
 let nasaAwardsProgramFilter = '';
+/** @type {'' | 'portfolio'} special filter; empty string = all programs when program filter empty */
+let nasaAwardsShowPortfolioOnly = false;
+let lastPortfolioAwardKey = '';
+
+function portfolioHeldTickers() {
+    const held = new Set();
+    Object.entries(portfolio.holdings || {}).forEach(([ticker, holding]) => {
+        if (holding && Number(holding.shares) > 0) held.add(ticker);
+    });
+    return held;
+}
+
+function portfolioTickerKey() {
+    return [...portfolioHeldTickers()].sort().join(',');
+}
+
+function isTickerInPortfolio(ticker) {
+    if (!ticker) return false;
+    const h = portfolio.holdings && portfolio.holdings[ticker];
+    return !!(h && Number(h.shares) > 0);
+}
+
+function refreshNasaAwardsIfPortfolioChanged() {
+    const key = portfolioTickerKey();
+    if (key === lastPortfolioAwardKey) return;
+    lastPortfolioAwardKey = key;
+    if (!nasaAwardsData.length) return;
+    renderNasaAwards();
+    renderNasaAwardFilters(nasaAwardsMeta.programs || []);
+}
 
 function formatMoney(amount) {
     return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 0 });
@@ -296,6 +326,9 @@ function renderPortfolio() {
 
     // Update projections
     updateProjections();
+
+    // Re-highlight NASA awards only when held tickers change (not every price tick)
+    refreshNasaAwardsIfPortfolioChanged();
 }
 
 function updatePortfolioValue() {
@@ -516,23 +549,44 @@ function renderNasaAwardFilters(programs) {
         ? programs
         : [...new Set(nasaAwardsData.map(a => a.program).filter(Boolean))].sort();
 
+    const heldCount = nasaAwardsData.filter(a => isTickerInPortfolio(a.ticker)).length;
+
     const chips = [
-        { program: '', label: 'All' },
-        ...progs.map(p => ({ program: p, label: p })),
+        { kind: 'all', label: 'All' },
+        { kind: 'portfolio', label: heldCount ? `In portfolio (${heldCount})` : 'In portfolio' },
+        ...progs.map(p => ({ kind: 'program', program: p, label: p })),
     ];
 
-    bar.innerHTML = chips.map(({ program, label }) => {
-        const active = nasaAwardsProgramFilter === program;
+    bar.innerHTML = chips.map((chip) => {
+        let active = false;
+        if (chip.kind === 'all') {
+            active = !nasaAwardsShowPortfolioOnly && !nasaAwardsProgramFilter;
+        } else if (chip.kind === 'portfolio') {
+            active = nasaAwardsShowPortfolioOnly;
+        } else {
+            active = !nasaAwardsShowPortfolioOnly && nasaAwardsProgramFilter === chip.program;
+        }
         const cls = active
             ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-300'
             : 'border-white/10 bg-white/5 text-white/60 hover:text-white hover:border-white/20';
-        const safe = (program || '').replace(/"/g, '');
-        return `<button type="button" data-program="${safe}" class="nasa-filter-btn px-3 py-1.5 rounded-2xl text-xs border transition-colors ${cls}">${label}</button>`;
+        const dataProg = chip.kind === 'program' ? String(chip.program).replace(/"/g, '') : '';
+        const dataKind = chip.kind;
+        return `<button type="button" data-kind="${dataKind}" data-program="${dataProg}" class="nasa-filter-btn px-3 py-1.5 rounded-2xl text-xs border transition-colors ${cls}">${chip.label}</button>`;
     }).join('');
 
     bar.querySelectorAll('.nasa-filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            nasaAwardsProgramFilter = btn.getAttribute('data-program') || '';
+            const kind = btn.getAttribute('data-kind') || 'all';
+            if (kind === 'portfolio') {
+                nasaAwardsShowPortfolioOnly = true;
+                nasaAwardsProgramFilter = '';
+            } else if (kind === 'program') {
+                nasaAwardsShowPortfolioOnly = false;
+                nasaAwardsProgramFilter = btn.getAttribute('data-program') || '';
+            } else {
+                nasaAwardsShowPortfolioOnly = false;
+                nasaAwardsProgramFilter = '';
+            }
             renderNasaAwards();
             renderNasaAwardFilters(progs);
         });
@@ -545,27 +599,47 @@ function renderNasaAwards() {
     const disc = document.getElementById('nasa-awards-disclaimer');
     if (!list) return;
 
+    lastPortfolioAwardKey = portfolioTickerKey();
+
     if (disc && nasaAwardsMeta.disclaimer) {
         disc.textContent = nasaAwardsMeta.disclaimer;
     }
 
     let awards = nasaAwardsData.slice();
-    if (nasaAwardsProgramFilter) {
+    if (nasaAwardsShowPortfolioOnly) {
+        awards = awards.filter(a => isTickerInPortfolio(a.ticker));
+    } else if (nasaAwardsProgramFilter) {
         const p = nasaAwardsProgramFilter.toLowerCase();
         awards = awards.filter(a => (a.program || '').toLowerCase() === p);
     }
 
+    // Portfolio holdings first, then keep relative date order
+    awards.sort((a, b) => {
+        const aIn = isTickerInPortfolio(a.ticker) ? 0 : 1;
+        const bIn = isTickerInPortfolio(b.ticker) ? 0 : 1;
+        if (aIn !== bIn) return aIn - bIn;
+        return (b.date || '').localeCompare(a.date || '');
+    });
+
+    const heldInView = awards.filter(a => isTickerInPortfolio(a.ticker)).length;
     if (meta) {
         const asOf = nasaAwardsMeta.as_of ? `as of ${nasaAwardsMeta.as_of}` : 'curated';
-        meta.textContent = `${awards.length} award${awards.length === 1 ? '' : 's'} · ${asOf}`;
+        const heldBit = heldInView
+            ? ` · ${heldInView} in your portfolio`
+            : '';
+        meta.textContent = `${awards.length} award${awards.length === 1 ? '' : 's'}${heldBit} · ${asOf}`;
     }
 
     if (!awards.length) {
-        list.innerHTML = `<div class="p-6 text-sm text-white/40">No awards for this filter. Try All, or reload the dataset.</div>`;
+        const emptyMsg = nasaAwardsShowPortfolioOnly
+            ? 'No awards match tickers in your portfolio yet. Buy a related name (e.g. LUNR, RKLB, BA) from Lunar Market.'
+            : 'No awards for this filter. Try All, or reload the dataset.';
+        list.innerHTML = `<div class="p-6 text-sm text-white/40">${emptyMsg}</div>`;
         return;
     }
 
     list.innerHTML = awards.map(a => {
+        const inPortfolio = isTickerInPortfolio(a.ticker);
         const themes = (a.themes || [])
             .filter(t => t && t !== 'candidate')
             .slice(0, 5)
@@ -574,20 +648,27 @@ function renderNasaAwards() {
         const ticker = a.ticker
             ? `<span class="font-mono text-cyan-300 text-xs px-2 py-0.5 rounded-lg bg-cyan-400/10 border border-cyan-400/20">${a.ticker}</span>`
             : `<span class="text-[10px] text-white/35 px-2 py-0.5 rounded-lg border border-white/10">private / multi</span>`;
+        const ownedBadge = inPortfolio
+            ? `<span class="text-[10px] px-2 py-0.5 rounded-full border border-emerald-400/40 bg-emerald-500/15 text-emerald-300 font-semibold tracking-wide">IN PORTFOLIO</span>`
+            : '';
         const amount = formatAwardAmount(a.amount_usd, a.amount_note);
         const badge = statusBadgeClass(a.status);
         const url = a.source_url || '#';
         const notes = a.notes
             ? `<p class="mt-2 text-[11px] text-white/40 leading-relaxed max-w-3xl">${a.notes}</p>`
             : '';
+        const articleCls = inPortfolio
+            ? 'p-4 sm:p-5 border-l-2 border-cyan-400 bg-cyan-400/5 hover:bg-cyan-400/10 transition-colors'
+            : 'p-4 sm:p-5 hover:bg-white/[0.03] transition-colors';
         return `
-        <article class="p-4 sm:p-5 hover:bg-white/[0.03] transition-colors">
+        <article class="${articleCls}" data-in-portfolio="${inPortfolio ? '1' : '0'}">
             <div class="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-6">
                 <div class="flex-1 min-w-0">
                     <div class="flex flex-wrap items-center gap-2 mb-1.5">
                         <span class="text-[10px] uppercase tracking-wider text-white/40 font-semibold">${a.program || 'NASA'}</span>
                         <span class="text-[10px] px-2 py-0.5 rounded-full border ${badge}">${a.status || 'awarded'}</span>
                         ${ticker}
+                        ${ownedBadge}
                     </div>
                     <h3 class="font-medium text-white/90 leading-snug">${a.title}</h3>
                     <div class="mt-1 text-sm text-white/55">${a.awardee || '—'}${a.date ? ` · <span class="text-white/35">${a.date}</span>` : ''}</div>
