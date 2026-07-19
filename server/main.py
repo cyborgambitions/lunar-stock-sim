@@ -532,6 +532,95 @@ async def api_launches():
         "count": len(launches_cache.get("launches", [])),
     }
 
+
+# ---- NASA / cislunar awards radar (curated educational dataset) ----
+NASA_AWARDS_PATH = os.path.join(PROJECT_ROOT, "data", "nasa_awards.json")
+_nasa_awards_cache = {"data": None, "mtime": None}
+
+
+def _load_nasa_awards() -> dict:
+    """Load curated awards JSON with mtime cache (no network)."""
+    global _nasa_awards_cache
+    try:
+        mtime = os.path.getmtime(NASA_AWARDS_PATH)
+    except OSError:
+        return {
+            "version": 0,
+            "as_of": None,
+            "disclaimer": "NASA awards dataset missing. Add data/nasa_awards.json.",
+            "awards": [],
+            "count": 0,
+            "error": "dataset_not_found",
+        }
+    if (
+        _nasa_awards_cache.get("data") is not None
+        and _nasa_awards_cache.get("mtime") == mtime
+    ):
+        return _nasa_awards_cache["data"]
+    try:
+        with open(NASA_AWARDS_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+        awards = raw.get("awards") or []
+        # Newest first
+        awards = sorted(awards, key=lambda a: a.get("date") or "", reverse=True)
+        payload = {
+            "version": raw.get("version", 1),
+            "as_of": raw.get("as_of"),
+            "disclaimer": raw.get(
+                "disclaimer",
+                "Educational only. Not financial advice. Awards are not revenue.",
+            ),
+            "source_note": raw.get("source_note", "Curated in-repo dataset."),
+            "awards": awards,
+            "count": len(awards),
+            "programs": sorted(
+                {a.get("program") for a in awards if a.get("program")}
+            ),
+            "themes": sorted(
+                {
+                    t
+                    for a in awards
+                    for t in (a.get("themes") or [])
+                    if t and t != "candidate"
+                }
+            ),
+        }
+        _nasa_awards_cache = {"data": payload, "mtime": mtime}
+        return payload
+    except Exception as e:
+        print(f"[LUNARA] NASA awards load error: {e}")
+        return {
+            "version": 0,
+            "as_of": None,
+            "disclaimer": "Failed to load awards dataset.",
+            "awards": [],
+            "count": 0,
+            "error": str(e),
+        }
+
+
+@app.get("/api/nasa-awards")
+async def api_nasa_awards(program: str | None = None, ticker: str | None = None):
+    """
+    Curated NASA / cislunar-relevant awards for educational radar.
+    Optional filters: program (e.g. CLPS, Artemis), ticker (e.g. LUNR).
+    """
+    data = _load_nasa_awards()
+    awards = list(data.get("awards") or [])
+    if program:
+        p = program.strip().lower()
+        awards = [a for a in awards if (a.get("program") or "").lower() == p]
+    if ticker:
+        t = ticker.strip().upper()
+        awards = [a for a in awards if (a.get("ticker") or "").upper() == t]
+    return {
+        **{k: v for k, v in data.items() if k != "awards"},
+        "awards": awards,
+        "count": len(awards),
+        "filter": {"program": program, "ticker": ticker},
+    }
+
+
 # Educational projections - server side for reliability
 @app.post("/api/projections")
 async def api_projections(data: dict = Body(...)):

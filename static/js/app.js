@@ -10,6 +10,9 @@ let stocksData = [];
 let cryptoData = [];
 let newsData = [];
 let launchesData = [];
+let nasaAwardsData = [];
+let nasaAwardsMeta = { as_of: null, disclaimer: '', programs: [] };
+let nasaAwardsProgramFilter = '';
 
 function formatMoney(amount) {
     return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 0 });
@@ -485,6 +488,148 @@ async function fetchLaunches() {
     }
 }
 
+function formatAwardAmount(usd, note) {
+    if (usd == null || usd === '') return note ? `n/a · ${note}` : 'n/a';
+    const n = Number(usd);
+    if (!Number.isFinite(n)) return 'n/a';
+    let core;
+    if (n >= 1e9) core = `$${(n / 1e9).toFixed(n >= 10e9 ? 1 : 2)}B`;
+    else if (n >= 1e6) core = `$${(n / 1e6).toFixed(n >= 100e6 ? 0 : 1)}M`;
+    else if (n >= 1e3) core = `$${(n / 1e3).toFixed(0)}K`;
+    else core = `$${n.toLocaleString()}`;
+    return note ? `${core} · approx` : core;
+}
+
+function statusBadgeClass(status) {
+    const s = (status || '').toLowerCase();
+    if (s === 'completed') return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+    if (s === 'delayed') return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+    if (s === 'cancelled') return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+    if (s === 'competed') return 'bg-violet-500/15 text-violet-300 border-violet-500/30';
+    return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
+}
+
+function renderNasaAwardFilters(programs) {
+    const bar = document.getElementById('nasa-awards-filters');
+    if (!bar) return;
+    const progs = programs && programs.length
+        ? programs
+        : [...new Set(nasaAwardsData.map(a => a.program).filter(Boolean))].sort();
+
+    const chips = [
+        { program: '', label: 'All' },
+        ...progs.map(p => ({ program: p, label: p })),
+    ];
+
+    bar.innerHTML = chips.map(({ program, label }) => {
+        const active = nasaAwardsProgramFilter === program;
+        const cls = active
+            ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-300'
+            : 'border-white/10 bg-white/5 text-white/60 hover:text-white hover:border-white/20';
+        const safe = (program || '').replace(/"/g, '');
+        return `<button type="button" data-program="${safe}" class="nasa-filter-btn px-3 py-1.5 rounded-2xl text-xs border transition-colors ${cls}">${label}</button>`;
+    }).join('');
+
+    bar.querySelectorAll('.nasa-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            nasaAwardsProgramFilter = btn.getAttribute('data-program') || '';
+            renderNasaAwards();
+            renderNasaAwardFilters(progs);
+        });
+    });
+}
+
+function renderNasaAwards() {
+    const list = document.getElementById('nasa-awards-list');
+    const meta = document.getElementById('nasa-awards-meta');
+    const disc = document.getElementById('nasa-awards-disclaimer');
+    if (!list) return;
+
+    if (disc && nasaAwardsMeta.disclaimer) {
+        disc.textContent = nasaAwardsMeta.disclaimer;
+    }
+
+    let awards = nasaAwardsData.slice();
+    if (nasaAwardsProgramFilter) {
+        const p = nasaAwardsProgramFilter.toLowerCase();
+        awards = awards.filter(a => (a.program || '').toLowerCase() === p);
+    }
+
+    if (meta) {
+        const asOf = nasaAwardsMeta.as_of ? `as of ${nasaAwardsMeta.as_of}` : 'curated';
+        meta.textContent = `${awards.length} award${awards.length === 1 ? '' : 's'} · ${asOf}`;
+    }
+
+    if (!awards.length) {
+        list.innerHTML = `<div class="p-6 text-sm text-white/40">No awards for this filter. Try All, or reload the dataset.</div>`;
+        return;
+    }
+
+    list.innerHTML = awards.map(a => {
+        const themes = (a.themes || [])
+            .filter(t => t && t !== 'candidate')
+            .slice(0, 5)
+            .map(t => `<span class="px-2 py-0.5 rounded-full bg-white/5 text-[10px] text-white/50">${t.replace(/_/g, ' ')}</span>`)
+            .join('');
+        const ticker = a.ticker
+            ? `<span class="font-mono text-cyan-300 text-xs px-2 py-0.5 rounded-lg bg-cyan-400/10 border border-cyan-400/20">${a.ticker}</span>`
+            : `<span class="text-[10px] text-white/35 px-2 py-0.5 rounded-lg border border-white/10">private / multi</span>`;
+        const amount = formatAwardAmount(a.amount_usd, a.amount_note);
+        const badge = statusBadgeClass(a.status);
+        const url = a.source_url || '#';
+        const notes = a.notes
+            ? `<p class="mt-2 text-[11px] text-white/40 leading-relaxed max-w-3xl">${a.notes}</p>`
+            : '';
+        return `
+        <article class="p-4 sm:p-5 hover:bg-white/[0.03] transition-colors">
+            <div class="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-6">
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                        <span class="text-[10px] uppercase tracking-wider text-white/40 font-semibold">${a.program || 'NASA'}</span>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full border ${badge}">${a.status || 'awarded'}</span>
+                        ${ticker}
+                    </div>
+                    <h3 class="font-medium text-white/90 leading-snug">${a.title}</h3>
+                    <div class="mt-1 text-sm text-white/55">${a.awardee || '—'}${a.date ? ` · <span class="text-white/35">${a.date}</span>` : ''}</div>
+                    ${themes ? `<div class="mt-2 flex flex-wrap gap-1.5">${themes}</div>` : ''}
+                    ${notes}
+                </div>
+                <div class="sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end gap-2 sm:gap-1">
+                    <div class="font-space text-lg text-emerald-400/90 money">${amount}</div>
+                    <a href="${url}" target="_blank" rel="noopener noreferrer"
+                       class="text-[11px] text-cyan-400/80 hover:text-cyan-300 inline-flex items-center gap-1">
+                        Source <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                    </a>
+                </div>
+            </div>
+        </article>`;
+    }).join('');
+}
+
+async function fetchNasaAwards() {
+    try {
+        const res = await fetch('/api/nasa-awards?t=' + Date.now());
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        nasaAwardsData = data.awards || [];
+        nasaAwardsMeta = {
+            as_of: data.as_of || null,
+            disclaimer: data.disclaimer || '',
+            programs: data.programs || [],
+        };
+        renderNasaAwardFilters(nasaAwardsMeta.programs);
+        renderNasaAwards();
+    } catch (e) {
+        console.error('Failed to fetch NASA awards', e);
+        const list = document.getElementById('nasa-awards-list');
+        const meta = document.getElementById('nasa-awards-meta');
+        if (meta) meta.textContent = 'Awards unavailable';
+        if (list) {
+            list.innerHTML = `<div class="p-6 text-sm text-white/40">Could not load NASA awards dataset. Check data/nasa_awards.json and /api/nasa-awards.</div>`;
+        }
+    }
+}
+
 async function advanceTime() {
     if (Object.keys(portfolio.holdings).length === 0) {
         alert("Buy some stocks first to see the effect of time!");
@@ -681,7 +826,8 @@ async function initApp() {
         fetchStocks(),
         fetchCrypto(),
         fetchNews(),
-        fetchLaunches()
+        fetchLaunches(),
+        fetchNasaAwards()
     ]);
 
     renderPortfolio();
