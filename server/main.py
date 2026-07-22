@@ -621,6 +621,619 @@ async def api_nasa_awards(program: str | None = None, ticker: str | None = None)
     }
 
 
+# ---- Alpha Base Book (public read-only $2500 operator book) ----
+ALPHA_BASE_BOOK_PATH = os.path.join(PROJECT_ROOT, "data", "alpha_base_book.json")
+_alpha_base_book_cache = {"data": None, "mtime": None}
+
+
+def _load_alpha_base_book_raw() -> dict:
+    """Load operator book JSON with mtime cache (no network)."""
+    global _alpha_base_book_cache
+    try:
+        mtime = os.path.getmtime(ALPHA_BASE_BOOK_PATH)
+    except OSError:
+        return {
+            "version": 0,
+            "name": "Alpha Base Book",
+            "error": "dataset_not_found",
+            "disclaimer": "Alpha Base Book missing. Add data/alpha_base_book.json.",
+            "cash": 0,
+            "holdings": [],
+            "starting_capital": 2500,
+        }
+    if (
+        _alpha_base_book_cache.get("data") is not None
+        and _alpha_base_book_cache.get("mtime") == mtime
+    ):
+        return _alpha_base_book_cache["data"]
+    try:
+        with open(ALPHA_BASE_BOOK_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            raise ValueError("alpha_base_book.json must be an object")
+        _alpha_base_book_cache = {"data": raw, "mtime": mtime}
+        return raw
+    except Exception as e:
+        print(f"[LUNARA] Alpha Base Book load error: {e}")
+        return {
+            "version": 0,
+            "name": "Alpha Base Book",
+            "error": str(e),
+            "disclaimer": "Failed to load Alpha Base Book.",
+            "cash": 0,
+            "holdings": [],
+            "starting_capital": 2500,
+        }
+
+
+def _price_map_from_live_market() -> dict:
+    """ticker -> {price, change_percent, name} from live cache (stocks + crypto).
+
+    While the stream is still on demo seed marks (`updated == "seed"`), return
+    empty so Alpha Base Book falls back to cost basis — avoids fake −40% weeks
+    from outdated seed prices (e.g. RKLB $5 vs book cost $25).
+    """
+    if (live_market.get("updated") or "") == "seed":
+        return {}
+    out = {}
+    for bucket in ("stocks", "cryptos"):
+        for item in live_market.get(bucket) or []:
+            t = (item.get("ticker") or "").upper()
+            if not t:
+                continue
+            # live stream stores day move as "change"; accept either key
+            ch = item.get("change_percent")
+            if ch is None:
+                ch = item.get("change")
+            out[t] = {
+                "price": float(item.get("price") or 0),
+                "change_percent": ch,
+                "name": item.get("name") or t,
+            }
+    return out
+
+
+DEFAULT_CATALYST_FRAMEWORK = {
+    "name": "Catalyst Scoreboard",
+    "entry_min": 3,
+    "entry_max": 5,
+    "weekly_max": 10,
+    "cadence": "weekly",
+    "entry_scoring": {"green": 1, "yellow": 0.5, "red": 0},
+    "entry_questions": [
+        {
+            "id": "mass_to_surface",
+            "short": "Mass to surface",
+            "question": "Does it reduce cost or increase the reliability of getting mass to the lunar surface?",
+        },
+        {
+            "id": "recurring_revenue",
+            "short": "Recurring revenue",
+            "question": "Does it create a recurring revenue stream once the base is operational (not just one-time launch revenue)?",
+        },
+        {
+            "id": "customer_capital",
+            "short": "Funded customer",
+            "question": "Is there a clear customer with money already allocated (NASA, DoD, commercial constellation, hyperscale)?",
+        },
+        {
+            "id": "bottleneck_tech",
+            "short": "Bottleneck tech",
+            "question": "Does the company control a bottleneck technology that is hard to substitute?",
+        },
+        {
+            "id": "timeline_quarters",
+            "short": "Timeline (quarters)",
+            "question": "Is the timeline measurable in quarters, not in someday?",
+        },
+    ],
+    "weekly_dimensions": [
+        {"id": "tech_execution", "max": 4, "label": "Technology / execution", "question": "Are they delivering?"},
+        {"id": "moat", "max": 2, "label": "Competitive moat", "question": "Are they replaceable?"},
+        {"id": "customer_capital", "max": 2, "label": "Customer & capital", "question": "Clear customer with money already allocated?"},
+        {"id": "narrative", "max": 1, "label": "Narrative · Moon Alpha Base", "question": "Does the market understand why this matters for the base?"},
+        {"id": "timeline", "max": 1, "label": "Timeline", "question": "Measurable in quarters, not someday?"},
+    ],
+}
+
+
+def _entry_status_points(status: str, scoring: dict) -> float:
+    s = (status or "red").strip().lower()
+    if s not in ("green", "yellow", "red"):
+        s = "red"
+    return float(scoring.get(s, 0))
+
+
+def _normalize_entry_status(status) -> str:
+    s = str(status or "red").strip().lower()
+    return s if s in ("green", "yellow", "red") else "red"
+
+
+def _enrich_catalyst(raw_catalyst: dict | None, framework: dict) -> dict | None:
+    """Compute entry score (≥3 gate), weekly /10, and traffic-light rows."""
+    if not raw_catalyst or not isinstance(raw_catalyst, dict):
+        return None
+
+    scoring = framework.get("entry_scoring") or {"green": 1, "yellow": 0.5, "red": 0}
+    entry_min = float(framework.get("entry_min") or 3)
+    weekly_max = float(framework.get("weekly_max") or 10)
+    questions = framework.get("entry_questions") or DEFAULT_CATALYST_FRAMEWORK["entry_questions"]
+    dimensions = framework.get("weekly_dimensions") or DEFAULT_CATALYST_FRAMEWORK["weekly_dimensions"]
+
+    entry_raw = raw_catalyst.get("entry") or {}
+    entry_items = []
+    entry_score = 0.0
+    for q in questions:
+        qid = q.get("id")
+        if not qid:
+            continue
+        status = _normalize_entry_status(entry_raw.get(qid))
+        pts = _entry_status_points(status, scoring)
+        entry_score += pts
+        entry_items.append({
+            "id": qid,
+            "short": q.get("short") or qid,
+            "question": q.get("question") or "",
+            "status": status,
+            "points": pts,
+        })
+
+    role = (raw_catalyst.get("role") or "core").strip().lower()
+    # Sleeve / ballast names are transparent but not required to clear the lunar-ops gate
+    gate_applies = role not in ("sleeve", "ballast", "cash")
+    eligible = (entry_score + 1e-9) >= entry_min if gate_applies else True
+
+    weekly_raw = raw_catalyst.get("weekly") or {}
+    weekly_items = []
+    weekly_score = 0.0
+    for dim in dimensions:
+        did = dim.get("id")
+        if not did:
+            continue
+        max_pts = float(dim.get("max") or 0)
+        try:
+            val = float(weekly_raw.get(did, 0) or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        val = max(0.0, min(max_pts, val))
+        weekly_score += val
+        weekly_items.append({
+            "id": did,
+            "label": dim.get("label") or did,
+            "question": dim.get("question") or "",
+            "max": max_pts,
+            "score": round(val, 2),
+        })
+
+    weekly_score = max(0.0, min(weekly_max, weekly_score))
+    # Band for UI: strong / watch / weak on weekly card
+    if weekly_score >= 7:
+        weekly_band = "strong"
+    elif weekly_score >= 4.5:
+        weekly_band = "watch"
+    else:
+        weekly_band = "weak"
+
+    return {
+        "week_of": raw_catalyst.get("week_of"),
+        "role": role,
+        "gate_applies": gate_applies,
+        "entry_score": round(entry_score, 2),
+        "entry_max": float(framework.get("entry_max") or 5),
+        "entry_min": entry_min,
+        "eligible": eligible,
+        "entry_items": entry_items,
+        "weekly_score": round(weekly_score, 2),
+        "weekly_max": weekly_max,
+        "weekly_band": weekly_band,
+        "weekly_items": weekly_items,
+        "why": raw_catalyst.get("why") or "",
+        "risks": raw_catalyst.get("risks") or "",
+    }
+
+
+def _enrich_alpha_base_book(raw: dict) -> dict:
+    """Attach live marks, position values, weights, catalyst scoreboard, vs starting capital."""
+    prices = _price_map_from_live_market()
+    cash = float(raw.get("cash") or 0)
+    starting = float(raw.get("starting_capital") or 2500)
+    framework = raw.get("catalyst_framework") or DEFAULT_CATALYST_FRAMEWORK
+    holdings_out = []
+    positions_value = 0.0
+    cost_basis_total = cash
+    scoreboard_rows = []
+
+    for h in raw.get("holdings") or []:
+        if not isinstance(h, dict):
+            continue
+        ticker = (h.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        shares = float(h.get("shares") or 0)
+        avg_price = float(h.get("avg_price") or 0)
+        quote = prices.get(ticker) or {}
+        live_price = float(quote.get("price") or 0)
+        # Fall back to cost if market not warm yet
+        mark = live_price if live_price > 0 else avg_price
+        market_value = shares * mark
+        cost = shares * avg_price
+        positions_value += market_value
+        cost_basis_total += cost
+        pnl = market_value - cost
+        pnl_pct = (pnl / cost * 100.0) if cost > 0 else 0.0
+        catalyst = _enrich_catalyst(h.get("catalyst"), framework)
+        row = {
+            "ticker": ticker,
+            "shares": shares,
+            "avg_price": round(avg_price, 6),
+            "live_price": round(mark, 6) if mark else None,
+            "price_source": "live" if live_price > 0 else ("cost" if avg_price > 0 else "none"),
+            "market_value": round(market_value, 2),
+            "cost_basis": round(cost, 2),
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 2),
+            "change_percent": quote.get("change_percent"),
+            "name": quote.get("name") or ticker,
+            "note": h.get("note") or "",
+            "catalyst": catalyst,
+        }
+        holdings_out.append(row)
+        if catalyst:
+            scoreboard_rows.append({
+                "ticker": ticker,
+                "name": row["name"],
+                "note": row["note"],
+                "weight_pct": None,  # filled after total known
+                "market_value": row["market_value"],
+                "catalyst": catalyst,
+            })
+
+    total_value = cash + positions_value
+    for row in holdings_out:
+        mv = row["market_value"]
+        row["weight_pct"] = round((mv / total_value * 100.0), 2) if total_value > 0 else 0.0
+    for sb in scoreboard_rows:
+        mv = sb["market_value"]
+        sb["weight_pct"] = round((mv / total_value * 100.0), 2) if total_value > 0 else 0.0
+
+    vs_start = total_value - starting
+    vs_start_pct = (vs_start / starting * 100.0) if starting > 0 else 0.0
+
+    # Sort scoreboard: core first by weekly score desc, sleeves last
+    scoreboard_rows.sort(
+        key=lambda r: (
+            0 if (r.get("catalyst") or {}).get("role") in ("sleeve", "ballast", "cash") else 1,
+            float((r.get("catalyst") or {}).get("weekly_score") or 0),
+            float((r.get("catalyst") or {}).get("entry_score") or 0),
+        ),
+        reverse=True,
+    )
+
+    return {
+        "version": raw.get("version", 1),
+        "name": raw.get("name", "Alpha Base Book"),
+        "operator": raw.get("operator", "@link_mindset"),
+        "tagline": raw.get("tagline", ""),
+        "status": raw.get("status", "live"),
+        "starting_capital": starting,
+        "week_of": raw.get("week_of"),
+        "as_of": raw.get("as_of"),
+        "updated_at": raw.get("updated_at"),
+        "cadence": raw.get("cadence", "monday"),
+        "next_rebalance_note": raw.get("next_rebalance_note", ""),
+        "thesis": raw.get("thesis", ""),
+        "disclaimer": raw.get(
+            "disclaimer",
+            "Educational simulation only. Not financial advice.",
+        ),
+        "x_ops": raw.get("x_ops") or {
+            "handle": "@link_mindset",
+            "share_path": "#alpha-base-book",
+            "hashtag": "AlphaBaseBook",
+            "scoreboard_path": "#catalyst-scoreboard",
+        },
+        "catalyst_framework": framework,
+        "scoreboard": scoreboard_rows,
+        "cash": round(cash, 2),
+        "holdings": holdings_out,
+        "positions_value": round(positions_value, 2),
+        "total_value": round(total_value, 2),
+        "cost_basis_total": round(cost_basis_total, 2),
+        "vs_starting": round(vs_start, 2),
+        "vs_starting_pct": round(vs_start_pct, 2),
+        "holdings_count": len(holdings_out),
+        "market_updated": live_market.get("updated") or None,
+        "read_only": True,
+        "error": raw.get("error"),
+    }
+
+
+# ---- Friday P&L strip (week % vs SPY + space ETF) ----
+WEEK_PNL_BENCHMARKS = (
+    ("SPY", "S&P 500"),
+    ("UFO", "Procure Space ETF"),
+)
+_week_return_cache: dict = {}  # symbol -> {"pct": float|None, "ts": datetime}
+_WEEK_RETURN_TTL = 300  # seconds
+# Own budget so market-stream Yahoo scrapes cannot starve the public book API
+_WEEK_PNL_TIMEOUT = 3.5
+_week_pnl_sem = asyncio.Semaphore(3)
+
+
+def _week_open_book_pct(total_now: float, open_val) -> tuple[float | None, str]:
+    """Book week % from Monday open mark when present."""
+    if open_val is None or total_now <= 0:
+        return None, "weighted_5d"
+    try:
+        open_f = float(open_val)
+        if open_f > 0:
+            return (total_now - open_f) / open_f * 100.0, "week_open_mark"
+    except (TypeError, ValueError):
+        pass
+    return None, "weighted_5d"
+
+
+def _week_pnl_shell(enriched: dict, raw: dict, book_pct=None, book_method="weighted_5d",
+                    benchmarks=None, extra=None) -> dict:
+    """Always-valid Friday P&L payload (benchmarks optional when Yahoo is slow)."""
+    total_now = float(enriched.get("total_value") or 0)
+    week_open = raw.get("week_open") if isinstance(raw.get("week_open"), dict) else {}
+    open_val = week_open.get("total_value")
+    if book_pct is None:
+        book_pct, book_method = _week_open_book_pct(total_now, open_val)
+
+    benches = benchmarks if benchmarks is not None else [
+        {"ticker": s, "label": lab, "week_pct": None} for s, lab in WEEK_PNL_BENCHMARKS
+    ]
+
+    def _delta(book, bench):
+        if book is None or bench is None:
+            return None
+        return round(float(book) - float(bench), 2)
+
+    b_pct = round(book_pct, 2) if book_pct is not None else None
+    spy_pct = benches[0]["week_pct"] if benches else None
+    ufo_pct = benches[1]["week_pct"] if len(benches) > 1 else None
+    payload = {
+        "label": "Friday P&L",
+        "window": "5d",
+        "book_pct": b_pct,
+        "book_method": book_method,
+        "week_open_value": float(open_val) if open_val is not None else None,
+        "book_value": round(total_now, 2) if total_now else None,
+        "benchmarks": benches,
+        "vs_spy": _delta(b_pct, spy_pct),
+        "vs_ufo": _delta(b_pct, ufo_pct),
+        "updated": datetime.utcnow().isoformat() + "Z",
+        "disclaimer": "Educational only. Week ≈ last 5 trading days unless week_open mark is set.",
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+async def _yahoo_week_return_pct(symbol: str) -> float | None:
+    """5 trading-day return % via Yahoo chart (cached). Does NOT use market _fetch_sem."""
+    now = datetime.utcnow()
+    cached = _week_return_cache.get(symbol)
+    if cached and (now - cached["ts"]).total_seconds() < _WEEK_RETURN_TTL:
+        return cached["pct"]
+
+    pct = None
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": "https://finance.yahoo.com/",
+    }
+    try:
+        async with _week_pnl_sem:
+            # Short connect+read so public API never waits on a hung Yahoo socket
+            timeout = httpx.Timeout(2.5, connect=1.5)
+            async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+                r = await client.get(
+                    f"{YAHOO_CHART_API}/{symbol}",
+                    params={"interval": "1d", "range": "5d"},
+                )
+                if r.status_code == 200:
+                    result = (r.json().get("chart") or {}).get("result") or []
+                    if result:
+                        quote = (result[0].get("indicators") or {}).get("quote") or [{}]
+                        closes = [c for c in (quote[0].get("close") or []) if c is not None]
+                        if len(closes) >= 2 and closes[0]:
+                            pct = (closes[-1] - closes[0]) / closes[0] * 100.0
+    except Exception as e:
+        print(f"[LUNARA] week return {symbol}: {e}")
+
+    _week_return_cache[symbol] = {"pct": pct, "ts": now}
+    return pct
+
+
+def _cached_week_pct(symbol: str) -> float | None:
+    cached = _week_return_cache.get(symbol)
+    if not cached:
+        return None
+    age = (datetime.utcnow() - cached["ts"]).total_seconds()
+    if age > _WEEK_RETURN_TTL:
+        return None
+    return cached["pct"]
+
+
+async def _warm_week_return_cache(symbols: list[str]) -> None:
+    """Background fill for SPY/UFO (and holdings if needed). Fail-open."""
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*[_yahoo_week_return_pct(s) for s in symbols], return_exceptions=True),
+            timeout=_WEEK_PNL_TIMEOUT + 2.0,
+        )
+    except Exception as e:
+        print(f"[LUNARA] week_pnl cache warm: {e}")
+
+
+async def _attach_week_pnl(enriched: dict, raw: dict) -> dict:
+    """
+    Friday P&L strip payload:
+      book week % (from week_open.total_value if set, else value-weighted 5d)
+      vs SPY + UFO (space ETF)
+
+    Fast path: Monday open mark + cached benchmarks (no Yahoo on request path).
+    Slow path (no open mark): brief timed Yahoo; otherwise warm cache in background.
+    """
+    total_now = float(enriched.get("total_value") or 0)
+    week_open = raw.get("week_open") if isinstance(raw.get("week_open"), dict) else {}
+    open_val = week_open.get("total_value")
+    book_pct, book_method = _week_open_book_pct(total_now, open_val)
+
+    holdings = enriched.get("holdings") or []
+    tickers = []
+    for h in holdings:
+        t = (h.get("ticker") or "").strip().upper()
+        if t and t not in tickers:
+            tickers.append(t)
+
+    bench_syms = [b[0] for b in WEEK_PNL_BENCHMARKS]
+    fetch_syms = list(bench_syms)
+    if book_pct is None:
+        fetch_syms = list(dict.fromkeys(bench_syms + tickers))
+
+    # Prefer cache so the public API stays snappy
+    pct_map = {s: _cached_week_pct(s) for s in fetch_syms}
+    need_fetch = [s for s in fetch_syms if s not in _week_return_cache or _cached_week_pct(s) is None and _week_return_cache.get(s) is None]
+    # also re-fetch if cache entry missing entirely
+    need_fetch = [s for s in fetch_syms if s not in _week_return_cache]
+
+    if need_fetch:
+        if book_pct is None:
+            # Need Yahoo for book % — small budget on request path
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(
+                        *[_yahoo_week_return_pct(s) for s in need_fetch],
+                        return_exceptions=True,
+                    ),
+                    timeout=_WEEK_PNL_TIMEOUT,
+                )
+                for sym, res in zip(need_fetch, results):
+                    if not isinstance(res, Exception):
+                        pct_map[sym] = res
+            except asyncio.TimeoutError:
+                print("[LUNARA] week_pnl Yahoo budget exceeded — book % still returned")
+                for sym in need_fetch:
+                    pct_map[sym] = _cached_week_pct(sym)
+        else:
+            # Book % already known from Monday mark — warm benchmarks off-path
+            try:
+                asyncio.create_task(_warm_week_return_cache(need_fetch))
+            except Exception:
+                pass
+
+    if book_pct is None and total_now > 0:
+        weighted = 0.0
+        weight_sum = 0.0
+        cash = float(enriched.get("cash") or 0)
+        if cash > 0:
+            weight_sum += cash
+        for h in holdings:
+            t = (h.get("ticker") or "").strip().upper()
+            mv = float(h.get("market_value") or 0)
+            if mv <= 0 or not t:
+                continue
+            wp = pct_map.get(t)
+            if wp is None:
+                continue
+            weighted += mv * float(wp)
+            weight_sum += mv
+        if weight_sum > 0:
+            book_pct = weighted / weight_sum
+            book_method = "weighted_5d"
+
+    benchmarks = []
+    for sym, label in WEEK_PNL_BENCHMARKS:
+        p = pct_map.get(sym)
+        if p is None:
+            p = _cached_week_pct(sym)
+        benchmarks.append({
+            "ticker": sym,
+            "label": label,
+            "week_pct": round(p, 2) if p is not None else None,
+        })
+
+    extra = {}
+    if any(b["week_pct"] is None for b in benchmarks):
+        extra["benchmarks_pending"] = True
+
+    enriched["week_pnl"] = _week_pnl_shell(
+        enriched, raw, book_pct=book_pct, book_method=book_method, benchmarks=benchmarks, extra=extra or None
+    )
+    return enriched
+
+
+@app.get("/api/alpha-base-book")
+async def api_alpha_base_book():
+    """
+    Public read-only Alpha Base Book: the operator's exact $2,500 allocation
+    (Monday lock), marked with live prices when the market stream is warm.
+    Includes Friday P&L week strip (book vs SPY + UFO).
+    """
+    raw = _load_alpha_base_book_raw()
+    enriched = _enrich_alpha_base_book(raw)
+    try:
+        enriched = await _attach_week_pnl(enriched, raw)
+    except Exception as e:
+        print(f"[LUNARA] week_pnl attach error: {e}")
+        enriched["week_pnl"] = _week_pnl_shell(enriched, raw, extra={"error": str(e)})
+    return enriched
+
+
+@app.put("/api/alpha-base-book")
+async def put_alpha_base_book(payload: dict = Body(...)):
+    """
+    Monday publish path. Requires env ALPHA_BASE_BOOK_TOKEN and matching
+    payload field `token`. Body is the full book JSON (minus token).
+    """
+    expected = (os.getenv("ALPHA_BASE_BOOK_TOKEN") or "").strip()
+    if not expected:
+        return JSONResponse(
+            {"error": "writes_disabled", "detail": "Set ALPHA_BASE_BOOK_TOKEN to enable Monday publishes."},
+            status_code=403,
+        )
+    provided = str(payload.get("token") or "").strip()
+    if provided != expected:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    book = {k: v for k, v in payload.items() if k != "token"}
+    if not isinstance(book.get("holdings"), list):
+        return JSONResponse(
+            {"error": "invalid_body", "detail": "holdings must be a list"},
+            status_code=400,
+        )
+    # Stamp publish metadata if caller omitted
+    now = datetime.utcnow().isoformat() + "Z"
+    book.setdefault("updated_at", now)
+    book.setdefault("as_of", now[:10])
+    book.setdefault("version", 1)
+    book.setdefault("starting_capital", 2500)
+    book.setdefault("name", "Alpha Base Book")
+    book.setdefault("operator", "@link_mindset")
+    book["status"] = book.get("status") or "live"
+    book["read_only"] = True
+
+    try:
+        os.makedirs(os.path.dirname(ALPHA_BASE_BOOK_PATH), exist_ok=True)
+        with open(ALPHA_BASE_BOOK_PATH, "w", encoding="utf-8") as f:
+            json.dump(book, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        global _alpha_base_book_cache
+        _alpha_base_book_cache = {"data": None, "mtime": None}
+        return {
+            "ok": True,
+            "message": "Alpha Base Book published",
+            "book": _enrich_alpha_base_book(_load_alpha_base_book_raw()),
+        }
+    except Exception as e:
+        print(f"[LUNARA] Alpha Base Book write error: {e}")
+        return JSONResponse({"error": "write_failed", "detail": str(e)}, status_code=500)
+
+
 # Educational projections - server side for reliability
 @app.post("/api/projections")
 async def api_projections(data: dict = Body(...)):

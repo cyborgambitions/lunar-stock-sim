@@ -8,6 +8,7 @@
 - Portfolio simulator with buy/sell, cash from "ground operations," and live P/L
 - 10-year growth projections (optimistic / base / pessimistic) with interactive chart
 - Real space news feed with direct article links
+- **Alpha Base Book** — public read-only live view of the operator’s exact $2,500 allocation (Monday lock, live marks); share `#alpha-base-book`, clone into the personal sim
 - Stunning 3D moon explorer (real NASA-derived textures)
 - "Where to invest for real" with educational broker & exchange links
 - Built for feedback & future monetization experiments
@@ -32,6 +33,48 @@ python -m server.main
 Open http://localhost:8765
 
 The server has hot reload. The frontend is in `static/`.
+
+### Alpha Base Book (Monday X ops)
+
+Public read-only operator book for engagement. Data lives in `data/alpha_base_book.json`.
+
+| Action | How |
+|--------|-----|
+| View | App section + deep link `#alpha-base-book` · API `GET /api/alpha-base-book` |
+| Monday lock | Edit `data/alpha_base_book.json` (shares, cash, `week_of`, `as_of`, `thesis`, set `status` to `"live"`) and redeploy/commit |
+| Remote publish | Optional: set env `ALPHA_BASE_BOOK_TOKEN`, then `PUT /api/alpha-base-book` with full book JSON + `"token"` |
+| Clone | UI button copies the public book into the visitor’s personal localStorage sim |
+
+Educational only — not advice. Seed holdings ship as `status: "seed"` until the first Monday lock.
+
+### Catalyst Scoreboard (why each name is in)
+
+Transparent thesis layer on every Alpha Base holding.
+
+| Layer | Rule |
+|-------|------|
+| **Entry gate (5)** | Green=1 · Yellow=0.5 · Red=0. Must total **≥3** to enter as a lunar-ops name |
+| **Q1** | Reduce cost / raise reliability of mass to the lunar surface? |
+| **Q2** | Recurring revenue once the base is ops (not one-shot launch only)? |
+| **Q3** | Clear customer with money allocated (NASA, DoD, constellation, hyperscale)? |
+| **Q4** | Bottleneck tech that is hard to substitute? |
+| **Q5** | Timeline in quarters, not “someday”? |
+| **Weekly /10** | 4 tech/execution · 2 moat · 2 customer & capital · 1 Moon Alpha Base narrative · 1 timeline |
+| **Sleeve** | e.g. BTC ballast — scored for transparency; entry gate does not apply |
+
+Deep link: `#catalyst-scoreboard`. Scores live under each holding’s `catalyst` block in `alpha_base_book.json` (rescored weekly with the Monday lock). Operator judgment only — not ratings or advice.
+
+### Friday P&L strip
+
+Zero-fluff week bar on Alpha Base Book: **BOOK** · **SPY** · **UFO** (space ETF), bold %, relative magnitude bar, **vs SPY**.
+
+| Source | How |
+|--------|-----|
+| Book % | Prefer `week_open.total_value` (set each Monday) vs live book value; else value-weighted 5d Yahoo returns |
+| Benchmarks | Yahoo chart `range=5d` for SPY + UFO (cached ~5 min); **fail-open** — book still renders if Yahoo is slow; benchmarks warm in background |
+| Seed marks | Until the market stream is warm (`updated != "seed"`), holdings mark at **cost** so the strip does not show a fake week move |
+
+Educational only — not advice.
 
 ### Tailwind CSS
 - Built locally to `static/css/tailwind.min.css` (no CDN in production).

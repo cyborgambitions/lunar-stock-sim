@@ -7,6 +7,8 @@ let portfolio = {
 };
 
 let stocksData = [];
+/** Market stream freshness: "seed" until Yahoo warm — Alpha Base ignores seed marks */
+let marketStreamUpdated = 'seed';
 let cryptoData = [];
 let newsData = [];
 let launchesData = [];
@@ -16,6 +18,9 @@ let nasaAwardsProgramFilter = '';
 /** @type {'' | 'portfolio'} special filter; empty string = all programs when program filter empty */
 let nasaAwardsShowPortfolioOnly = false;
 let lastPortfolioAwardKey = '';
+
+/** Public operator book (Alpha Base Book) — read-only, Monday lock */
+let alphaBaseBookData = null;
 
 function portfolioHeldTickers() {
     const held = new Set();
@@ -46,6 +51,494 @@ function refreshNasaAwardsIfPortfolioChanged() {
 
 function formatMoney(amount) {
     return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 0 });
+}
+
+function formatMoneyExact(amount) {
+    const n = Number(amount);
+    if (!Number.isFinite(n)) return '—';
+    return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function livePriceForTicker(ticker) {
+    // Do not re-mark the public book from demo seed prices (wrong levels → fake week P&L)
+    if (marketStreamUpdated === 'seed') return null;
+    const t = (ticker || '').toUpperCase();
+    const s = stocksData.find(a => (a.ticker || '').toUpperCase() === t);
+    if (s && s.price > 0) {
+        const ch = s.change_percent != null ? s.change_percent : s.change;
+        return { price: Number(s.price), change_percent: ch, name: s.name };
+    }
+    const c = cryptoData.find(a => (a.ticker || '').toUpperCase() === t);
+    if (c && c.price > 0) {
+        const ch = c.change_percent != null ? c.change_percent : c.change;
+        return { price: Number(c.price), change_percent: ch, name: c.name };
+    }
+    return null;
+}
+
+function reenrichAlphaBaseBook(book) {
+    if (!book) return null;
+    const cash = Number(book.cash) || 0;
+    const starting = Number(book.starting_capital) || 2500;
+    let positionsValue = 0;
+    const holdings = (book.holdings || []).map(h => {
+        const ticker = (h.ticker || '').toUpperCase();
+        const shares = Number(h.shares) || 0;
+        const avg = Number(h.avg_price != null ? h.avg_price : h.avgPrice) || 0;
+        const quote = livePriceForTicker(ticker);
+        const live = quote && quote.price > 0 ? quote.price : (Number(h.live_price) || avg);
+        const marketValue = shares * live;
+        const cost = shares * avg;
+        positionsValue += marketValue;
+        const pnl = marketValue - cost;
+        return {
+            ...h,
+            ticker,
+            shares,
+            avg_price: avg,
+            live_price: live,
+            price_source: quote && quote.price > 0 ? 'live' : (h.price_source || 'cost'),
+            market_value: marketValue,
+            cost_basis: cost,
+            pnl,
+            pnl_pct: cost > 0 ? (pnl / cost) * 100 : 0,
+            change_percent: quote ? quote.change_percent : h.change_percent,
+            name: (quote && quote.name) || h.name || ticker,
+            note: h.note || '',
+            catalyst: h.catalyst || null,
+        };
+    });
+    const totalValue = cash + positionsValue;
+    holdings.forEach(row => {
+        row.weight_pct = totalValue > 0 ? (row.market_value / totalValue) * 100 : 0;
+    });
+    const vs = totalValue - starting;
+    const scoreboard = (book.scoreboard || holdings.map(h => ({
+        ticker: h.ticker,
+        name: h.name,
+        note: h.note,
+        market_value: h.market_value,
+        weight_pct: h.weight_pct,
+        catalyst: h.catalyst,
+    }))).map(sb => {
+        const match = holdings.find(h => h.ticker === sb.ticker);
+        if (!match) return sb;
+        return {
+            ...sb,
+            market_value: match.market_value,
+            weight_pct: match.weight_pct,
+            catalyst: match.catalyst || sb.catalyst,
+        };
+    });
+    return {
+        ...book,
+        cash,
+        holdings,
+        scoreboard,
+        positions_value: positionsValue,
+        total_value: totalValue,
+        vs_starting: vs,
+        vs_starting_pct: starting > 0 ? (vs / starting) * 100 : 0,
+        holdings_count: holdings.length,
+        read_only: true,
+    };
+}
+
+async function fetchAlphaBaseBook() {
+    try {
+        const res = await fetch('/api/alpha-base-book?t=' + Date.now());
+        const data = await res.json();
+        // Preserve server week_pnl (benchmarks) across client re-mark
+        const weekPnl = data.week_pnl || null;
+        alphaBaseBookData = reenrichAlphaBaseBook(data);
+        if (alphaBaseBookData && weekPnl) {
+            alphaBaseBookData.week_pnl = weekPnl;
+            // If Monday week_open mark exists, refresh book % from live total
+            if (weekPnl.week_open_value != null && alphaBaseBookData.total_value > 0) {
+                const openV = Number(weekPnl.week_open_value);
+                if (openV > 0) {
+                    alphaBaseBookData.week_pnl = {
+                        ...weekPnl,
+                        book_pct: ((alphaBaseBookData.total_value - openV) / openV) * 100,
+                        book_value: alphaBaseBookData.total_value,
+                        book_method: 'week_open_mark',
+                        vs_spy: weekPnl.benchmarks && weekPnl.benchmarks[0] && weekPnl.benchmarks[0].week_pct != null
+                            ? (((alphaBaseBookData.total_value - openV) / openV) * 100) - weekPnl.benchmarks[0].week_pct
+                            : weekPnl.vs_spy,
+                        vs_ufo: weekPnl.benchmarks && weekPnl.benchmarks[1] && weekPnl.benchmarks[1].week_pct != null
+                            ? (((alphaBaseBookData.total_value - openV) / openV) * 100) - weekPnl.benchmarks[1].week_pct
+                            : weekPnl.vs_ufo,
+                    };
+                }
+            }
+        }
+        renderAlphaBaseBook();
+        renderFridayPnl();
+        renderCatalystScoreboard();
+    } catch (e) {
+        console.error('Failed to fetch Alpha Base Book', e);
+        const el = document.getElementById('abb-holdings');
+        if (el) {
+            el.innerHTML = `<div class="p-6 text-center text-rose-300/80 text-sm">Alpha Base Book offline. Retry soon.</div>`;
+        }
+    }
+}
+
+function formatPctBold(n) {
+    if (n == null || !Number.isFinite(Number(n))) return '—';
+    const v = Number(n);
+    const sign = v > 0 ? '+' : '';
+    return sign + v.toFixed(2) + '%';
+}
+
+function pctToneClass(n) {
+    if (n == null || !Number.isFinite(Number(n))) return 'text-white/50';
+    const v = Number(n);
+    if (v > 0) return 'text-emerald-400';
+    if (v < 0) return 'text-rose-400';
+    return 'text-white/80';
+}
+
+function renderFridayPnl() {
+    const strip = document.getElementById('friday-pnl');
+    const book = alphaBaseBookData;
+    if (!strip) return;
+    const w = book && book.week_pnl;
+    if (!w) {
+        strip.classList.add('opacity-50');
+        return;
+    }
+    strip.classList.remove('opacity-50');
+
+    // Recompute book % from live total when week_open is known
+    let bookPct = w.book_pct;
+    if (w.week_open_value != null && book && book.total_value > 0) {
+        const openV = Number(w.week_open_value);
+        if (openV > 0) bookPct = ((book.total_value - openV) / openV) * 100;
+    }
+
+    const spy = (w.benchmarks || []).find(b => b.ticker === 'SPY');
+    const ufo = (w.benchmarks || []).find(b => b.ticker === 'UFO') || (w.benchmarks || [])[1];
+    const spyPct = spy && spy.week_pct != null ? spy.week_pct : null;
+    const ufoPct = ufo && ufo.week_pct != null ? ufo.week_pct : null;
+    const vsSpy = bookPct != null && spyPct != null ? bookPct - spyPct : w.vs_spy;
+
+    const setPct = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = formatPctBold(val);
+        el.className = `font-space text-xl sm:text-2xl font-bold tabular-nums ${pctToneClass(val)}`;
+    };
+    setPct('fpnl-book', bookPct);
+    setPct('fpnl-spy', spyPct);
+    setPct('fpnl-ufo', ufoPct);
+
+    const vsEl = document.getElementById('fpnl-vs-spy');
+    if (vsEl) {
+        vsEl.textContent = formatPctBold(vsSpy);
+        vsEl.className = `font-mono text-sm font-bold tabular-nums ${pctToneClass(vsSpy)}`;
+    }
+
+    // Relative bar: map signed % to positive widths (magnitude share of max abs)
+    const vals = [bookPct, spyPct, ufoPct].map(v => (v == null || !Number.isFinite(v) ? 0 : Math.abs(v)));
+    const max = Math.max(...vals, 0.01);
+    const widths = vals.map(v => Math.max(8, (v / max) * 100)); // min visible slice
+    const sum = widths.reduce((a, b) => a + b, 0) || 1;
+    const norm = widths.map(w0 => (w0 / sum) * 100);
+    const barBook = document.getElementById('fpnl-bar-book');
+    const barSpy = document.getElementById('fpnl-bar-spy');
+    const barUfo = document.getElementById('fpnl-bar-ufo');
+    if (barBook) barBook.style.width = norm[0].toFixed(1) + '%';
+    if (barSpy) barSpy.style.width = norm[1].toFixed(1) + '%';
+    if (barUfo) barUfo.style.width = norm[2].toFixed(1) + '%';
+    // Tone bar segments by sign
+    if (barBook) barBook.className = `h-full transition-all duration-300 ${bookPct != null && bookPct < 0 ? 'bg-rose-400' : 'bg-cyan-400'}`;
+    if (barSpy) barSpy.className = `h-full transition-all duration-300 ${spyPct != null && spyPct < 0 ? 'bg-rose-400/50' : 'bg-white/35'}`;
+    if (barUfo) barUfo.className = `h-full transition-all duration-300 ${ufoPct != null && ufoPct < 0 ? 'bg-rose-400/60' : 'bg-violet-400/80'}`;
+}
+
+function catalystStatusDot(status) {
+    const s = (status || 'red').toLowerCase();
+    if (s === 'green') return 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]';
+    if (s === 'yellow') return 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.5)]';
+    return 'bg-rose-400 shadow-[0_0_6px_rgba(251,113,133,0.5)]';
+}
+
+function catalystWeeklyBar(score, max) {
+    const m = Number(max) || 1;
+    const pct = Math.max(0, Math.min(100, (Number(score) / m) * 100));
+    return `<div class="h-1.5 rounded-full bg-white/10 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-violet-400 to-cyan-400" style="width:${pct}%"></div></div>`;
+}
+
+function renderCatalystScoreboard() {
+    const book = alphaBaseBookData;
+    const fw = (book && book.catalyst_framework) || null;
+    const rows = (book && (book.scoreboard || book.holdings)) || [];
+
+    const fwEl = document.getElementById('cs-framework');
+    if (fwEl) {
+        fwEl.textContent = (fw && fw.note)
+            || (fw
+                ? `Entry gate: 5 checklist items (must total ≥${fw.entry_min || 3}). Weekly score /${fw.weekly_max || 10}. Educational only.`
+                : 'Entry gate + weekly /10 scorecard. Educational only.');
+    }
+
+    const qEl = document.getElementById('cs-questions');
+    if (qEl && fw && fw.entry_questions) {
+        qEl.innerHTML = fw.entry_questions.map((q, i) => `
+            <div class="rounded-2xl border border-white/10 bg-black/25 p-3">
+                <div class="text-[10px] text-violet-300/80 uppercase tracking-wide mb-1">${i + 1}. ${escapeHtml(q.short || q.id)}</div>
+                <div class="text-[11px] text-white/60 leading-snug">${escapeHtml(q.question || '')}</div>
+            </div>
+        `).join('');
+    }
+
+    const cards = document.getElementById('cs-cards');
+    if (!cards) return;
+    if (!rows.length) {
+        cards.innerHTML = `<div class="p-6 text-center text-white/40 text-sm">No scored holdings yet.</div>`;
+        return;
+    }
+
+    cards.innerHTML = rows.map(row => {
+        const c = row.catalyst;
+        if (!c) {
+            return `<div class="rounded-2xl border border-white/10 p-4 text-white/40 text-sm">${escapeHtml(row.ticker)} — no catalyst card yet</div>`;
+        }
+        const role = (c.role || 'core').toLowerCase();
+        const isSleeve = role === 'sleeve' || role === 'ballast' || role === 'cash';
+        const entryOk = c.eligible;
+        const gateBadge = isSleeve
+            ? `<span class="text-[10px] px-2 py-0.5 rounded-full border border-white/20 text-white/50">SLEEVE · gate N/A</span>`
+            : entryOk
+                ? `<span class="text-[10px] px-2 py-0.5 rounded-full border border-emerald-400/40 text-emerald-300">ENTRY ${c.entry_score}/${c.entry_max} · PASS</span>`
+                : `<span class="text-[10px] px-2 py-0.5 rounded-full border border-rose-400/40 text-rose-300">ENTRY ${c.entry_score}/${c.entry_max} · BELOW ${c.entry_min}</span>`;
+
+        const band = c.weekly_band || 'watch';
+        const bandCls = band === 'strong'
+            ? 'text-emerald-300 border-emerald-400/30'
+            : band === 'weak'
+                ? 'text-rose-300 border-rose-400/30'
+                : 'text-amber-300 border-amber-400/30';
+
+        const dots = (c.entry_items || []).map(item => `
+            <div class="flex items-start gap-2 min-w-0" title="${escapeHtml(item.question)}">
+                <span class="mt-1 w-2 h-2 rounded-full shrink-0 ${catalystStatusDot(item.status)}"></span>
+                <div class="min-w-0">
+                    <div class="text-[11px] text-white/80 truncate">${escapeHtml(item.short)}</div>
+                    <div class="text-[10px] text-white/40 capitalize">${escapeHtml(item.status)} · ${item.points}pt</div>
+                </div>
+            </div>
+        `).join('');
+
+        const weeklyBars = (c.weekly_items || []).map(w => `
+            <div class="space-y-1">
+                <div class="flex justify-between text-[10px] gap-2">
+                    <span class="text-white/60 truncate" title="${escapeHtml(w.question)}">${escapeHtml(w.label)}</span>
+                    <span class="tabular-nums text-white/80 shrink-0">${w.score}/${w.max}</span>
+                </div>
+                ${catalystWeeklyBar(w.score, w.max)}
+            </div>
+        `).join('');
+
+        const wt = row.weight_pct != null ? `${Number(row.weight_pct).toFixed(1)}% wt` : '';
+
+        return `
+        <article class="rounded-2xl border border-white/10 bg-black/20 p-4 sm:p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-mono text-lg font-semibold text-cyan-300">${escapeHtml(row.ticker)}</span>
+                        ${gateBadge}
+                        <span class="text-[10px] px-2 py-0.5 rounded-full border ${bandCls}">WEEKLY ${c.weekly_score}/${c.weekly_max}</span>
+                        ${wt ? `<span class="text-[10px] text-white/40">${wt}</span>` : ''}
+                    </div>
+                    <div class="text-xs text-white/50 mt-1">${escapeHtml(row.note || row.name || '')}</div>
+                </div>
+                <a href="#alpha-base-book" class="text-[10px] text-violet-300/80 hover:text-violet-200">Book →</a>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                    <div class="text-[10px] uppercase tracking-wide text-white/40 mb-2">Entry gate (5)</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${dots}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] uppercase tracking-wide text-white/40 mb-2">Weekly scorecard</div>
+                    <div class="space-y-2">${weeklyBars}</div>
+                </div>
+            </div>
+            ${c.why ? `<p class="mt-3 text-sm text-white/70 leading-relaxed"><span class="text-violet-300/90 font-medium">Why · </span>${escapeHtml(c.why)}</p>` : ''}
+            ${c.risks ? `<p class="mt-1.5 text-xs text-white/40 leading-relaxed"><span class="text-rose-300/70">Risks · </span>${escapeHtml(c.risks)}</p>` : ''}
+        </article>`;
+    }).join('');
+}
+
+function renderAlphaBaseBook() {
+    const book = alphaBaseBookData;
+    if (!book) return;
+
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+
+    if (book.tagline) setText('abb-tagline', book.tagline);
+    setText('abb-operator', book.operator || '@link_mindset');
+    setText('abb-total', formatMoneyExact(book.total_value));
+    setText('abb-cash', formatMoneyExact(book.cash));
+    setText('abb-week', book.week_of || book.as_of || '—');
+
+    const vsEl = document.getElementById('abb-vs-start');
+    if (vsEl) {
+        const vs = Number(book.vs_starting) || 0;
+        const pct = Number(book.vs_starting_pct) || 0;
+        const sign = vs > 0 ? '+' : '';
+        vsEl.textContent = `${sign}${formatMoneyExact(vs)} (${sign}${pct.toFixed(1)}%)`;
+        vsEl.classList.remove('text-emerald-400', 'text-rose-400', 'text-white/80');
+        vsEl.classList.add(vs > 0 ? 'text-emerald-400' : vs < 0 ? 'text-rose-400' : 'text-white/80');
+    }
+
+    const badge = document.getElementById('abb-status-badge');
+    if (badge) {
+        const st = (book.status || 'live').toLowerCase();
+        badge.textContent = st === 'seed' ? 'SEED — PENDING MONDAY LOCK' : 'MONDAY LOCK · LIVE MARKS';
+        badge.className = st === 'seed'
+            ? 'text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border border-amber-400/40 text-amber-300 bg-amber-400/10'
+            : 'text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border border-emerald-400/40 text-emerald-300 bg-emerald-400/10';
+    }
+
+    const updatedBits = [];
+    if (book.updated_at) {
+        try {
+            updatedBits.push('published ' + new Date(book.updated_at).toLocaleDateString());
+        } catch (_) {
+            updatedBits.push('published ' + book.updated_at);
+        }
+    }
+    if (book.market_updated) {
+        try {
+            updatedBits.push('marks ' + new Date(book.market_updated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        } catch (_) {}
+    }
+    setText('abb-updated', updatedBits.join(' · ') || '—');
+    setText('abb-thesis', book.thesis || '');
+    setText('abb-disclaimer', book.disclaimer || 'Educational only. Not financial advice.');
+    setText('abb-rebalance-note', book.next_rebalance_note || 'Allocation locked Mondays; prices mark live.');
+
+    const container = document.getElementById('abb-holdings');
+    if (!container) return;
+
+    const holdings = book.holdings || [];
+    if (!holdings.length) {
+        container.innerHTML = `<div class="p-6 text-center text-white/40 text-sm">No positions published yet. Check back Monday.</div>`;
+        return;
+    }
+
+    const header = `
+        <div class="hidden sm:grid grid-cols-12 gap-2 px-4 py-2 text-[10px] uppercase tracking-wide text-white/40 bg-white/5">
+            <div class="col-span-3">Ticker</div>
+            <div class="col-span-2 text-right">Shares</div>
+            <div class="col-span-2 text-right">Live</div>
+            <div class="col-span-2 text-right">Value</div>
+            <div class="col-span-1 text-right">Wt</div>
+            <div class="col-span-2 text-right">P/L · gate</div>
+        </div>`;
+
+    const rows = holdings.map(h => {
+        const pnl = Number(h.pnl) || 0;
+        const pnlPct = Number(h.pnl_pct) || 0;
+        const pnlCls = pnl > 0 ? 'text-emerald-400' : pnl < 0 ? 'text-rose-400' : 'text-white/70';
+        const sign = pnl > 0 ? '+' : '';
+        const note = h.note ? `<div class="text-[10px] text-white/40 truncate max-w-[14rem]">${escapeHtml(h.note)}</div>` : '';
+        const sharesStr = Number(h.shares) >= 1
+            ? Number(h.shares).toLocaleString(undefined, { maximumFractionDigits: 4 })
+            : Number(h.shares).toLocaleString(undefined, { maximumFractionDigits: 6 });
+        const cat = h.catalyst;
+        let catMini = '';
+        if (cat && cat.entry_items) {
+            const dots = cat.entry_items.map(it =>
+                `<span class="inline-block w-1.5 h-1.5 rounded-full ${catalystStatusDot(it.status)}" title="${escapeHtml(it.short)}: ${escapeHtml(it.status)}"></span>`
+            ).join('');
+            const wk = cat.weekly_score != null ? `${cat.weekly_score}/10` : '';
+            catMini = `<div class="flex items-center gap-1 mt-1" title="Catalyst entry ${cat.entry_score}/${cat.entry_max}">${dots}<span class="text-[9px] text-violet-300/80 ml-1">${wk}</span></div>`;
+        }
+        return `
+        <div class="grid grid-cols-2 sm:grid-cols-12 gap-1 sm:gap-2 px-4 py-3 items-center hover:bg-white/[0.03]">
+            <div class="col-span-1 sm:col-span-3">
+                <div class="font-mono font-semibold text-cyan-300"><a href="#catalyst-scoreboard" class="hover:underline">${escapeHtml(h.ticker)}</a></div>
+                ${note}
+                ${catMini}
+            </div>
+            <div class="col-span-1 sm:col-span-2 text-right tabular-nums text-sm text-white/80">${sharesStr}</div>
+            <div class="col-span-1 sm:col-span-2 text-right tabular-nums text-sm">${formatMoneyExact(h.live_price)}</div>
+            <div class="col-span-1 sm:col-span-2 text-right tabular-nums text-sm font-medium">${formatMoneyExact(h.market_value)}</div>
+            <div class="col-span-1 sm:col-span-1 text-right tabular-nums text-xs text-white/50">${(Number(h.weight_pct) || 0).toFixed(1)}%</div>
+            <div class="col-span-1 sm:col-span-2 text-right tabular-nums text-xs ${pnlCls}">${sign}${formatMoneyExact(pnl)} <span class="opacity-70">(${sign}${pnlPct.toFixed(1)}%)</span></div>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = header + rows;
+}
+
+function escapeHtml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function copyAlphaBaseBookLink() {
+    const path = (alphaBaseBookData && alphaBaseBookData.x_ops && alphaBaseBookData.x_ops.share_path) || '#alpha-base-book';
+    const url = `${window.location.origin}${window.location.pathname}${path}`;
+    const label = document.getElementById('abb-copy-label');
+    const done = () => {
+        if (label) {
+            label.textContent = 'Link copied';
+            setTimeout(() => { label.textContent = 'Copy share link'; }, 1600);
+        }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(() => {
+            window.prompt('Copy share link:', url);
+        });
+    } else {
+        window.prompt('Copy share link:', url);
+        done();
+    }
+}
+
+function cloneAlphaBaseBook() {
+    if (!alphaBaseBookData || !(alphaBaseBookData.holdings || []).length) {
+        alert('Alpha Base Book is not loaded yet.');
+        return;
+    }
+    const ok = confirm(
+        'Clone Alpha Base Book into your personal sim?\n\n' +
+        'This replaces your local portfolio (cash + holdings) with the public Monday book. Educational only — not advice.'
+    );
+    if (!ok) return;
+
+    const holdings = {};
+    (alphaBaseBookData.holdings || []).forEach(h => {
+        const t = (h.ticker || '').toUpperCase();
+        if (!t) return;
+        holdings[t] = {
+            shares: Number(h.shares) || 0,
+            avgPrice: Number(h.avg_price) || 0,
+        };
+    });
+    portfolio = {
+        cash: Number(alphaBaseBookData.cash) || 0,
+        holdings,
+    };
+    savePortfolio();
+    updatePortfolioValue();
+    renderPortfolio();
+    refreshNasaAwardsIfPortfolioChanged();
+
+    const dest = document.getElementById('portfolio');
+    if (dest) dest.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function formatPrice(price) {
@@ -469,7 +962,7 @@ function renderLaunches() {
     if (!container) return;
 
     if (!launchesData.length) {
-        container.innerHTML = '<div class="text-white/40 text-center py-6">No upcoming launches found. Refreshing…</div>';
+        container.innerHTML = '<div class="text-white/40 text-center py-3 text-[10px]">No upcoming launches found. Refreshing…</div>';
         return;
     }
 
@@ -478,14 +971,14 @@ function renderLaunches() {
     launchesData.forEach(launch => {
         const div = document.createElement('div');
         const isStarship = /starship|super heavy/i.test(launch.rocket || '') || /starship/i.test(launch.name || '');
-        div.className = `px-3 py-2 rounded-lg flex items-start gap-x-2 text-[10px] ${isStarship ? 'bg-cyan-500/10 border border-cyan-500/20' : 'bg-white/5'}`;
+        div.className = `px-2 py-1 rounded-md flex items-start gap-x-2 text-[10px] leading-tight ${isStarship ? 'bg-cyan-500/10 border border-cyan-500/20' : 'bg-white/5'}`;
         const place = [launch.pad, launch.location].filter(Boolean).join(' • ');
         const country = launch.country ? ` (${launch.country})` : '';
         div.innerHTML = `
             <div class="flex-1 min-w-0">
                 <div class="font-medium truncate">${launch.name}</div>
-                <div class="text-white/50">${launch.provider} • ${launch.rocket}</div>
-                ${place ? `<div class="text-[8px] text-white/30 mt-0.5 truncate">${place}${country}</div>` : ''}
+                <div class="text-white/50 truncate">${launch.provider} • ${launch.rocket}</div>
+                ${place ? `<div class="text-[8px] text-white/30 truncate">${place}${country}</div>` : ''}
             </div>
             <div class="text-right text-emerald-400 whitespace-nowrap shrink-0">
                 ${formatLaunchTime(launch.net)}<br>
@@ -908,10 +1401,17 @@ async function initApp() {
         fetchCrypto(),
         fetchNews(),
         fetchLaunches(),
-        fetchNasaAwards()
+        fetchNasaAwards(),
+        fetchAlphaBaseBook()
     ]);
 
     renderPortfolio();
+    // Deep-links for X share cards
+    const hash = window.location.hash;
+    if (hash === '#alpha-base-book' || hash === '#catalyst-scoreboard') {
+        const el = document.getElementById(hash.slice(1));
+        if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+    }
 
     // Initial 3D moon (wrapped to prevent any texture load error from breaking other features like Grok)
     try {
@@ -940,6 +1440,7 @@ function setupMarketStream() {
         marketStream.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                if (data.updated != null) marketStreamUpdated = data.updated;
 
                 if (data.stocks && data.stocks.length > 0) {
                     stocksData = data.stocks;
@@ -956,6 +1457,15 @@ function setupMarketStream() {
                     renderLaunches();
                 }
                 updatePortfolioValue();
+                // Re-mark public Alpha Base Book from live prices (no extra network)
+                if (alphaBaseBookData) {
+                    const keepPnl = alphaBaseBookData.week_pnl;
+                    alphaBaseBookData = reenrichAlphaBaseBook(alphaBaseBookData);
+                    if (keepPnl) alphaBaseBookData.week_pnl = keepPnl;
+                    renderAlphaBaseBook();
+                    renderFridayPnl();
+                    renderCatalystScoreboard();
+                }
             } catch (parseErr) {
                 console.warn('Stream parse error', parseErr);
             }

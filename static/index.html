@@ -110,6 +110,14 @@
                 </div>
 
                 <div class="flex items-center gap-x-4 text-sm">
+                    <a href="#alpha-base-book" class="hidden md:inline-flex items-center gap-x-1.5 px-3 py-1.5 rounded-2xl text-xs border border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/10 transition-all">
+                        <i class="fa-solid fa-book-open"></i>
+                        <span>Alpha Base Book</span>
+                    </a>
+                    <a href="#catalyst-scoreboard" class="hidden lg:inline-flex items-center gap-x-1.5 px-3 py-1.5 rounded-2xl text-xs border border-violet-400/30 text-violet-300 hover:bg-violet-400/10 transition-all">
+                        <i class="fa-solid fa-table-list"></i>
+                        <span>Catalysts</span>
+                    </a>
                     <div class="hidden sm:flex items-center gap-x-2 bg-white/5 px-3 py-1.5 rounded-2xl text-xs">
                         <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
                         <span class="text-white/70">Live Markets</span>
@@ -302,6 +310,135 @@
             </div>
         </div>
 
+        <!-- Alpha Base Book — public read-only operator $2500 book (X ops) -->
+        <div id="alpha-base-book" class="mb-16 scroll-mt-24">
+            <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-4">
+                <div>
+                    <div class="section-header">Public operator book · X ops</div>
+                    <div class="font-space text-4xl tracking-tight">Alpha Base Book</div>
+                    <p id="abb-tagline" class="text-white/60 text-sm mt-1 max-w-2xl">
+                        Live read-only view of the exact $2,500 allocation — locked Mondays, marked with live prices.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span id="abb-status-badge" class="text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border border-amber-400/40 text-amber-300 bg-amber-400/10">SEED</span>
+                    <span class="text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border border-white/15 text-white/60 bg-white/5">READ-ONLY</span>
+                    <span id="abb-operator" class="text-xs text-cyan-300/90">@link_mindset</span>
+                </div>
+            </div>
+
+            <!-- Friday P&L strip — week book vs SPY / space ETF, zero fluff -->
+            <div id="friday-pnl" class="mb-3 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5">
+                <div class="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+                    <span class="text-[10px] uppercase tracking-widest text-white/40 shrink-0">Fri P&amp;L · week</span>
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-[10px] text-white/45">BOOK</span>
+                        <span id="fpnl-book" class="font-space text-xl sm:text-2xl font-bold tabular-nums text-white">—</span>
+                    </div>
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-[10px] text-white/45">SPY</span>
+                        <span id="fpnl-spy" class="font-space text-xl sm:text-2xl font-bold tabular-nums text-white/90">—</span>
+                    </div>
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-[10px] text-white/45">UFO</span>
+                        <span id="fpnl-ufo" class="font-space text-xl sm:text-2xl font-bold tabular-nums text-white/90">—</span>
+                    </div>
+                    <div class="flex items-baseline gap-1.5 ml-auto">
+                        <span class="text-[10px] text-white/40">vs SPY</span>
+                        <span id="fpnl-vs-spy" class="font-mono text-sm font-bold tabular-nums text-white/70">—</span>
+                    </div>
+                </div>
+                <div class="mt-2 h-1.5 w-full rounded-full bg-white/10 overflow-hidden flex" id="fpnl-bar" title="Relative week move (scaled)">
+                    <div id="fpnl-bar-book" class="h-full bg-cyan-400 transition-all duration-300" style="width:33%"></div>
+                    <div id="fpnl-bar-spy" class="h-full bg-white/35 transition-all duration-300" style="width:33%"></div>
+                    <div id="fpnl-bar-ufo" class="h-full bg-violet-400/80 transition-all duration-300" style="width:34%"></div>
+                </div>
+                <div class="mt-1 flex justify-between text-[9px] text-white/30 uppercase tracking-wide">
+                    <span>Book</span><span>SPY</span><span>UFO · space ETF</span>
+                </div>
+            </div>
+
+            <div class="glass rounded-3xl border border-cyan-400/20 p-5 sm:p-6">
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                    <div class="rounded-2xl bg-black/30 border border-white/10 p-3">
+                        <div class="text-[10px] text-white/50 uppercase tracking-wide">Live book value</div>
+                        <div id="abb-total" class="font-space text-2xl tabular-nums font-semibold text-cyan-300 money">—</div>
+                    </div>
+                    <div class="rounded-2xl bg-black/30 border border-white/10 p-3">
+                        <div class="text-[10px] text-white/50 uppercase tracking-wide">vs $2,500 start</div>
+                        <div id="abb-vs-start" class="font-space text-2xl tabular-nums font-semibold money">—</div>
+                    </div>
+                    <div class="rounded-2xl bg-black/30 border border-white/10 p-3">
+                        <div class="text-[10px] text-white/50 uppercase tracking-wide">Cash</div>
+                        <div id="abb-cash" class="font-space text-2xl tabular-nums font-semibold money">—</div>
+                    </div>
+                    <div class="rounded-2xl bg-black/30 border border-white/10 p-3">
+                        <div class="text-[10px] text-white/50 uppercase tracking-wide">Week of</div>
+                        <div id="abb-week" class="font-space text-lg font-semibold text-white/90">—</div>
+                        <div id="abb-updated" class="text-[10px] text-white/40 mt-0.5">—</div>
+                    </div>
+                </div>
+
+                <div id="abb-thesis" class="text-sm text-white/70 mb-4 leading-relaxed max-w-3xl"></div>
+
+                <div id="abb-holdings" class="divide-y divide-white/10 border border-white/10 rounded-2xl overflow-hidden mb-4">
+                    <div class="p-6 text-center text-white/40 text-sm">Loading Alpha Base Book…</div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <button type="button" onclick="cloneAlphaBaseBook()"
+                            class="flex-1 py-3 rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 text-black font-semibold flex items-center justify-center gap-x-2 hover:brightness-105 transition-all">
+                        <i class="fa-solid fa-clone"></i>
+                        <span>Clone into my sim</span>
+                    </button>
+                    <button type="button" onclick="copyAlphaBaseBookLink()"
+                            class="flex-1 py-3 rounded-2xl border border-white/20 hover:bg-white/5 flex items-center justify-center gap-x-2 transition-all text-sm">
+                        <i class="fa-solid fa-link"></i>
+                        <span id="abb-copy-label">Copy share link</span>
+                    </button>
+                    <a href="#portfolio" class="flex-1 py-3 rounded-2xl border border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/10 flex items-center justify-center gap-x-2 transition-all text-sm text-center">
+                        <i class="fa-solid fa-rocket"></i>
+                        <span>Build your own book</span>
+                    </a>
+                </div>
+
+                <p id="abb-disclaimer" class="text-[10px] text-white/40 mt-4 leading-relaxed"></p>
+                <p id="abb-rebalance-note" class="text-[10px] text-cyan-400/60 mt-1"></p>
+            </div>
+        </div>
+
+        <!-- Catalyst Scoreboard — why each holding is in the book -->
+        <div id="catalyst-scoreboard" class="mb-16 scroll-mt-24">
+            <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-4">
+                <div>
+                    <div class="section-header">Why these names · weekly</div>
+                    <div class="font-space text-4xl tracking-tight">Catalyst Scoreboard</div>
+                    <p class="text-white/60 text-sm mt-1 max-w-2xl">
+                        Five-point entry gate (green / yellow / red) — must total ≥3 to enter as a lunar-ops name.
+                        Weekly score out of 10 so the thesis stays transparent.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider">
+                    <span class="px-2.5 py-1 rounded-full border border-emerald-400/40 text-emerald-300 bg-emerald-400/10">G = 1</span>
+                    <span class="px-2.5 py-1 rounded-full border border-amber-400/40 text-amber-300 bg-amber-400/10">Y = 0.5</span>
+                    <span class="px-2.5 py-1 rounded-full border border-rose-400/40 text-rose-300 bg-rose-400/10">R = 0</span>
+                    <span class="px-2.5 py-1 rounded-full border border-white/15 text-white/60 bg-white/5">Weekly /10</span>
+                </div>
+            </div>
+
+            <div class="glass rounded-3xl border border-violet-400/20 p-5 sm:p-6">
+                <div id="cs-framework" class="mb-5 text-xs text-white/50 leading-relaxed max-w-3xl"></div>
+                <div id="cs-questions" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-6"></div>
+                <div id="cs-cards" class="space-y-4">
+                    <div class="p-6 text-center text-white/40 text-sm">Loading scoreboard…</div>
+                </div>
+                <p class="text-[10px] text-white/40 mt-5 leading-relaxed">
+                    Educational operator judgment only — not ratings, not price targets, not financial advice.
+                    Rescored weekly with the Alpha Base Book Monday lock.
+                </p>
+            </div>
+        </div>
+
         <!-- Portfolio -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-8" id="portfolio">
             <div class="lg:col-span-7">
@@ -415,32 +552,32 @@
             </div>
         </div>
 
-        <!-- Rocket Launch Schedule (real-time) -->
-        <div class="mb-6">
-            <div class="flex items-center justify-between mb-2 px-1">
-                <div class="font-space text-lg tracking-tight">Global Rocket Launch Schedule</div>
+        <!-- Rocket Launch Schedule (real-time) — compact for scroll budget -->
+        <div class="mb-5">
+            <div class="flex items-center justify-between mb-1.5 px-1">
+                <div class="font-space text-base tracking-tight">Global Rocket Launch Schedule</div>
                 <div id="launches-updated" class="text-[10px] text-white/40">Loading live schedule…</div>
             </div>
-            <div class="glass rounded-3xl border border-white/10 overflow-hidden">
-                <div class="grid grid-cols-1 lg:grid-cols-12">
-                    <div class="lg:col-span-5 flex flex-col border-b lg:border-b-0 lg:border-r border-white/10">
-                        <div class="relative h-44 sm:h-52 lg:h-56 overflow-hidden shrink-0">
+            <div class="glass rounded-2xl border border-white/10 overflow-hidden">
+                <div class="grid grid-cols-1 sm:grid-cols-12">
+                    <div class="sm:col-span-4 flex flex-row sm:flex-col border-b sm:border-b-0 sm:border-r border-white/10">
+                        <div class="relative w-28 h-20 sm:w-full sm:h-28 lg:h-32 overflow-hidden shrink-0">
                             <img
                                 src="/static/images/starship_super_heavy.jpg"
                                 alt="SpaceX Starship Super Heavy on the launch pad"
-                                class="absolute inset-0 w-full h-full object-cover"
+                                class="absolute inset-0 w-full h-full object-cover object-center"
                                 loading="lazy"
                             >
                         </div>
-                        <div class="px-4 py-3 bg-[#0a0b0f]/70 shrink-0">
-                            <div class="text-[10px] uppercase tracking-widest text-cyan-400/80 mb-1">Featured Vehicle</div>
-                            <div class="font-space text-base text-white leading-tight">Starship Super Heavy</div>
-                            <div class="text-[10px] text-white/50 mt-0.5">SpaceX • Starbase, Texas</div>
+                        <div class="px-3 py-2 bg-[#0a0b0f]/70 flex-1 flex flex-col justify-center min-w-0">
+                            <div class="text-[9px] uppercase tracking-widest text-cyan-400/80">Featured Vehicle</div>
+                            <div class="font-space text-sm text-white leading-tight truncate">Starship Super Heavy</div>
+                            <div class="text-[9px] text-white/50">SpaceX • Starbase</div>
                         </div>
                     </div>
-                    <div class="lg:col-span-7 p-4 flex flex-col min-h-0">
-                        <div class="text-[10px] uppercase tracking-widest text-white/40 mb-2 shrink-0">Upcoming Launches</div>
-                        <div id="launches-feed" class="space-y-1.5 text-xs flex-1 max-h-[280px] lg:max-h-[300px] overflow-y-auto pr-1">
+                    <div class="sm:col-span-8 px-3 py-2.5 flex flex-col min-h-0">
+                        <div class="text-[9px] uppercase tracking-widest text-white/40 mb-1.5 shrink-0">Upcoming Launches</div>
+                        <div id="launches-feed" class="space-y-1 text-[11px] flex-1 max-h-[160px] sm:max-h-[140px] lg:max-h-[148px] overflow-y-auto pr-1">
                             <!-- Populated by JS (compact rows) -->
                         </div>
                     </div>

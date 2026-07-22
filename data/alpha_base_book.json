@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "name": "Alpha Base Book",
+  "operator": "@link_mindset",
+  "tagline": "Public read-only $2,500 cislunar book — locked Mondays, marked live",
+  "status": "seed",
+  "starting_capital": 2500,
+  "week_of": "2026-07-21",
+  "as_of": "2026-07-21",
+  "updated_at": "2026-07-21T16:00:00Z",
+  "cadence": "monday",
+  "next_rebalance_note": "Next public rebalance: Monday (educational lock). Intraday prices mark live; weights only change on Monday publish. Catalyst scoreboard rescored weekly with the book.",
+  "thesis": "Seed book for X ops: launch cadence (RKLB) + connectivity (ASTS) + lunar delivery (LUNR) + Earth observation (PL) + hard-money crypto sleeve (BTC). Every name runs the Catalyst Scoreboard so the *why* is public. Replace seed shares with the live Monday lock before promoting hard on X.",
+  "disclaimer": "Educational simulation only. Not financial advice, not a recommendation, not a solicitation. This is a public read-only view of a $2,500 paper book run for engagement and teaching. Catalyst scores are operator judgment for transparency — not ratings, not price targets. Verify prices yourself. Past performance does not predict future results.",
+  "cash": 250.0,
+  "week_open": {
+    "as_of": "2026-07-21",
+    "total_value": 2500.0,
+    "note": "Monday open mark for Friday P&L strip. Update each Monday lock."
+  },
+  "catalyst_framework": {
+    "name": "Catalyst Scoreboard",
+    "entry_min": 3,
+    "entry_max": 5,
+    "weekly_max": 10,
+    "cadence": "weekly",
+    "entry_scoring": {
+      "green": 1,
+      "yellow": 0.5,
+      "red": 0
+    },
+    "entry_questions": [
+      {
+        "id": "mass_to_surface",
+        "short": "Mass to surface",
+        "question": "Does it reduce cost or increase the reliability of getting mass to the lunar surface?"
+      },
+      {
+        "id": "recurring_revenue",
+        "short": "Recurring revenue",
+        "question": "Does it create a recurring revenue stream once the base is operational (not just one-time launch revenue)?"
+      },
+      {
+        "id": "customer_capital",
+        "short": "Funded customer",
+        "question": "Is there a clear customer with money already allocated (NASA, DoD, commercial constellation, hyperscale)?"
+      },
+      {
+        "id": "bottleneck_tech",
+        "short": "Bottleneck tech",
+        "question": "Does the company control a bottleneck technology that is hard to substitute?"
+      },
+      {
+        "id": "timeline_quarters",
+        "short": "Timeline (quarters)",
+        "question": "Is the timeline measurable in quarters, not in someday?"
+      }
+    ],
+    "weekly_dimensions": [
+      {
+        "id": "tech_execution",
+        "max": 4,
+        "label": "Technology / execution",
+        "question": "Are they delivering?"
+      },
+      {
+        "id": "moat",
+        "max": 2,
+        "label": "Competitive moat",
+        "question": "Are they replaceable?"
+      },
+      {
+        "id": "customer_capital",
+        "max": 2,
+        "label": "Customer & capital",
+        "question": "Clear customer with money already allocated?"
+      },
+      {
+        "id": "narrative",
+        "max": 1,
+        "label": "Narrative · Moon Alpha Base",
+        "question": "Does the market understand why this matters for the base?"
+      },
+      {
+        "id": "timeline",
+        "max": 1,
+        "label": "Timeline",
+        "question": "Measurable in quarters, not someday?"
+      }
+    ],
+    "note": "Entry gate: 5 checklist items (G=1, Y=0.5, R=0). Must total ≥3 to enter the book as a lunar-ops name. Weekly score: /10. Educational operator judgment only — not advice. Weekly rubric completes the stated 4+2+1 with customer capital (2) + timeline (1) so the card is a full 10."
+  },
+  "holdings": [
+    {
+      "ticker": "RKLB",
+      "shares": 30,
+      "avg_price": 25.0,
+      "note": "Launch cadence / rideshare narrative",
+      "catalyst": {
+        "week_of": "2026-07-21",
+        "role": "core",
+        "entry": {
+          "mass_to_surface": "green",
+          "recurring_revenue": "yellow",
+          "customer_capital": "green",
+          "bottleneck_tech": "yellow",
+          "timeline_quarters": "green"
+        },
+        "weekly": {
+          "tech_execution": 3,
+          "moat": 1.5,
+          "customer_capital": 2,
+          "narrative": 1,
+          "timeline": 1
+        },
+        "why": "Cadence + Neutron path is the mass-to-orbit bridge; gov + commercial manifests keep the calendar real. Launch is partly one-shot revenue — recurring is thinner until constellation logistics stack.",
+        "risks": "Neutron execution risk; competition from larger launch supply."
+      }
+    },
+    {
+      "ticker": "ASTS",
+      "shares": 40,
+      "avg_price": 12.5,
+      "note": "Direct-to-device satellite connectivity",
+      "catalyst": {
+        "week_of": "2026-07-21",
+        "role": "core",
+        "entry": {
+          "mass_to_surface": "red",
+          "recurring_revenue": "green",
+          "customer_capital": "yellow",
+          "bottleneck_tech": "green",
+          "timeline_quarters": "yellow"
+        },
+        "weekly": {
+          "tech_execution": 2,
+          "moat": 2,
+          "customer_capital": 1,
+          "narrative": 0.5,
+          "timeline": 0.5
+        },
+        "why": "Recurring connectivity + spectrum/tech bottleneck if they lock commercial use. Weak on lunar mass logistics; base story is comms layer once surface ops need bandwidth.",
+        "risks": "Execution/timeline slippage; capital intensity; narrative often runs ahead of revenue."
+      }
+    },
+    {
+      "ticker": "LUNR",
+      "shares": 25,
+      "avg_price": 15.0,
+      "note": "CLPS / lunar delivery optionality",
+      "catalyst": {
+        "week_of": "2026-07-21",
+        "role": "core",
+        "entry": {
+          "mass_to_surface": "green",
+          "recurring_revenue": "yellow",
+          "customer_capital": "green",
+          "bottleneck_tech": "yellow",
+          "timeline_quarters": "green"
+        },
+        "weekly": {
+          "tech_execution": 2.5,
+          "moat": 1,
+          "customer_capital": 2,
+          "narrative": 1,
+          "timeline": 1
+        },
+        "why": "Direct lunar surface delivery (CLPS) — highest narrative fit for Moon Alpha Base logistics. NASA-aligned customer capital; mission cadence is quarter-visible.",
+        "risks": "Mission failure history; concentration in task orders; thin recurring until services stack."
+      }
+    },
+    {
+      "ticker": "PL",
+      "shares": 50,
+      "avg_price": 5.0,
+      "note": "Earth observation data flywheel",
+      "catalyst": {
+        "week_of": "2026-07-21",
+        "role": "core",
+        "entry": {
+          "mass_to_surface": "red",
+          "recurring_revenue": "green",
+          "customer_capital": "green",
+          "bottleneck_tech": "yellow",
+          "timeline_quarters": "green"
+        },
+        "weekly": {
+          "tech_execution": 3,
+          "moat": 1,
+          "customer_capital": 1.5,
+          "narrative": 0.5,
+          "timeline": 1
+        },
+        "why": "Recurring data revenue + real customers now. Weak direct mass-to-Moon link; base relevance is sensing / site intel / Earth–cislunar situational awareness.",
+        "risks": "Commodity EO pressure; lunar narrative is indirect; dilution/competition."
+      }
+    },
+    {
+      "ticker": "BTC-USD",
+      "shares": 0.0035,
+      "avg_price": 107142.86,
+      "note": "Hard-money sleeve (crypto)",
+      "catalyst": {
+        "week_of": "2026-07-21",
+        "role": "sleeve",
+        "entry": {
+          "mass_to_surface": "red",
+          "recurring_revenue": "red",
+          "customer_capital": "red",
+          "bottleneck_tech": "yellow",
+          "timeline_quarters": "yellow"
+        },
+        "weekly": {
+          "tech_execution": 0,
+          "moat": 1,
+          "customer_capital": 0,
+          "narrative": 0,
+          "timeline": 0.5
+        },
+        "why": "Not a lunar-ops name. Hard-money ballast / optionality sleeve so the book is not 100% aerospace beta. Tracked for transparency — does not need entry gate ≥3.",
+        "risks": "Volatility; no lunar cash-flow story; narrative drift if oversized."
+      }
+    }
+  ],
+  "x_ops": {
+    "handle": "@link_mindset",
+    "share_path": "#alpha-base-book",
+    "hashtag": "AlphaBaseBook",
+    "scoreboard_path": "#catalyst-scoreboard",
+    "cta": "Clone this book into your free sim — build your own cislunar stack."
+  }
+}
